@@ -1,9 +1,15 @@
 # src/semantic_search_mcp/embedder.py
 """FastEmbed wrapper for code embeddings."""
+import logging
 import math
+import shutil
+import tempfile
+from pathlib import Path
 from typing import Optional
 
 from fastembed import TextEmbedding
+
+logger = logging.getLogger(__name__)
 
 
 class Embedder:
@@ -27,14 +33,70 @@ class Embedder:
         self._model: Optional[TextEmbedding] = None
         self._cache_dir = cache_dir
 
+    def _find_and_clear_model_cache(self) -> bool:
+        """Find and clear the fastembed cache for this model.
+
+        Returns:
+            True if cache was found and cleared, False otherwise.
+        """
+        # fastembed uses temp directory by default
+        cache_locations = [
+            Path(tempfile.gettempdir()) / "fastembed_cache",
+            Path.home() / ".cache" / "fastembed",
+            Path.home() / ".cache" / "fastembed_cache",
+        ]
+
+        # Convert model name to cache directory name (e.g., "jinaai/jina-..." -> "models--jinaai--jina-...")
+        model_cache_name = f"models--{self.model_name.replace('/', '--')}"
+
+        cleared = False
+        for cache_dir in cache_locations:
+            model_path = cache_dir / model_cache_name
+            if model_path.exists():
+                logger.warning(f"Clearing incomplete model cache: {model_path}")
+                try:
+                    shutil.rmtree(model_path)
+                    cleared = True
+                except Exception as e:
+                    logger.error(f"Failed to clear cache {model_path}: {e}")
+
+        return cleared
+
     @property
     def model(self) -> TextEmbedding:
-        """Lazy-load the embedding model."""
+        """Lazy-load the embedding model with retry on incomplete download."""
         if self._model is None:
-            self._model = TextEmbedding(
-                model_name=self.model_name,
-                cache_dir=self._cache_dir,
-            )
+            try:
+                self._model = TextEmbedding(
+                    model_name=self.model_name,
+                    cache_dir=self._cache_dir,
+                )
+            except Exception as e:
+                error_msg = str(e).lower()
+                # Check for ONNX file not found errors (incomplete download)
+                if "no_suchfile" in error_msg or "doesn't exist" in error_msg or "does not exist" in error_msg:
+                    logger.warning(f"Model files incomplete, clearing cache and retrying: {e}")
+                    if self._find_and_clear_model_cache():
+                        # Retry after clearing cache
+                        try:
+                            self._model = TextEmbedding(
+                                model_name=self.model_name,
+                                cache_dir=self._cache_dir,
+                            )
+                        except Exception as retry_error:
+                            raise RuntimeError(
+                                f"Failed to download embedding model after cache clear. "
+                                f"Check your internet connection and try again. "
+                                f"Original error: {retry_error}"
+                            ) from retry_error
+                    else:
+                        raise RuntimeError(
+                            f"Embedding model files are incomplete but cache not found. "
+                            f"Try manually clearing: rm -rf /tmp/fastembed_cache ~/.cache/fastembed*\n"
+                            f"Original error: {e}"
+                        ) from e
+                else:
+                    raise
         return self._model
 
     def embed(self, texts: list[str]) -> list[list[float]]:
