@@ -5,7 +5,7 @@ An MCP server that provides semantic code search using local embeddings. Search 
 ## Features
 
 - **Hybrid search**: Combines vector similarity (Jina code embeddings) with FTS5 keyword matching using Reciprocal Rank Fusion
-- **30+ languages**: Tree-sitter parsing for Python, TypeScript, JavaScript, Go, Rust, Java, C/C++, Ruby, PHP, and more
+- **165+ languages**: Tree-sitter parsing for Python, TypeScript, JavaScript, Go, Rust, Java, C/C++, Ruby, PHP, and more
 - **Incremental indexing**: File watcher automatically detects additions, modifications, and deletions
 - **Respects .gitignore**: Honors your project's `.gitignore` files (including nested ones)
 - **Auto-initialization**: Model loads and codebase indexes in the background on server startup
@@ -14,12 +14,17 @@ An MCP server that provides semantic code search using local embeddings. Search 
 ## Installation
 
 ```bash
-uvx install semantic-search-mcp
+uv tool install semantic-search-mcp
 ```
 
 Or with pip:
 ```bash
 pip install semantic-search-mcp
+```
+
+Or run directly without installing:
+```bash
+uvx semantic-search-mcp
 ```
 
 ## Quick Start

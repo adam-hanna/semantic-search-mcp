@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-import tree_sitter_languages
+from tree_sitter_language_pack import get_parser as get_language_parser
 
 
 @dataclass
@@ -109,7 +109,7 @@ class CodeChunker:
         """Get or create a parser for the given language."""
         if language not in self._parsers:
             try:
-                self._parsers[language] = tree_sitter_languages.get_parser(language)
+                self._parsers[language] = get_language_parser(language)
             except Exception:
                 return None
         return self._parsers[language]

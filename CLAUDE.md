@@ -8,7 +8,7 @@ This server enables natural language code search across codebases. It combines v
 
 **Key capabilities:**
 - Search code with queries like "authentication middleware" or "database connection pooling"
-- 30+ language support via Tree-sitter parsing
+- 165+ language support via Tree-sitter parsing
 - Automatic incremental indexing via file watcher
 - Zero external API dependencies - all embeddings generated locally
 
@@ -76,12 +76,9 @@ index_meta (key, value)
 ### 1. APSW instead of sqlite3
 Standard Python sqlite3 lacks `ENABLE_LOAD_EXTENSION` on many systems. APSW provides reliable extension loading for sqlite-vec.
 
-### 2. Tree-sitter version pinning
-```toml
-tree-sitter>=0.21.0,<0.22.0
-tree-sitter-languages>=1.7.0,<1.8.0
-```
-Version 0.23+ has breaking API changes incompatible with tree-sitter-languages.
+### 2. Tree-sitter language pack
+Uses `tree-sitter-language-pack` (actively maintained) instead of the deprecated `tree-sitter-languages`.
+Supports Python 3.9-3.13 and 165+ languages.
 
 ### 3. Hybrid search with RRF
 Combines vector similarity (semantic) with FTS5 BM25 (keywords) using Reciprocal Rank Fusion:
@@ -183,10 +180,10 @@ semantic-search-mcp/
 ## Common Tasks
 
 ### Adding language support
-Tree-sitter-languages supports 30+ languages automatically. To check supported languages:
+Tree-sitter-language-pack supports 165+ languages automatically. To check supported languages:
 ```python
-from tree_sitter_languages import get_language
-lang = get_language('rust')  # Returns language if supported
+from tree_sitter_language_pack import get_parser
+parser = get_parser('rust')  # Returns parser if supported
 ```
 
 ### Debugging search results
