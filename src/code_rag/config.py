@@ -2,7 +2,6 @@
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass
@@ -31,6 +30,8 @@ class Config:
 
     def __post_init__(self):
         """Validate configuration values."""
+        if isinstance(self.db_path, str):
+            self.db_path = Path(self.db_path)
         if not 0 <= self.search_min_score <= 1:
             raise ValueError(f"min_score must be between 0 and 1, got {self.search_min_score}")
 
