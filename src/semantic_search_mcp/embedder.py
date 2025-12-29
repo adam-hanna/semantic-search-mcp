@@ -111,9 +111,13 @@ class Embedder:
         if not texts:
             return []
 
-        # FastEmbed returns a generator, convert to list
-        embeddings = list(self.model.embed(texts))
-        return [list(emb) for emb in embeddings]
+        # FastEmbed returns a generator - process one at a time to avoid
+        # holding all numpy arrays in memory simultaneously
+        result = []
+        for emb in self.model.embed(texts):
+            result.append(list(emb))  # Convert numpy to list immediately
+            del emb  # Explicitly free numpy array
+        return result
 
     def embed_query(self, query: str) -> list[float]:
         """Generate embedding for a single query.

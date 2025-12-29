@@ -132,6 +132,7 @@ class FileIndexer:
 
         # Store in database (atomic transaction)
         language = chunks[0].language if chunks else "unknown"
+        num_chunks = len(chunks)
 
         try:
             file_id = self.db.upsert_file(path_str, content_hash, language)
@@ -160,7 +161,11 @@ class FileIndexer:
                     preview=chunk.content[:200],
                 )
 
-            return {"status": "indexed", "chunks": len(chunks)}
+            # Explicitly free memory
+            del chunks
+            del embeddings
+
+            return {"status": "indexed", "chunks": num_chunks}
 
         except Exception as e:
             logger.error(f"Database error for {filepath}: {e}")

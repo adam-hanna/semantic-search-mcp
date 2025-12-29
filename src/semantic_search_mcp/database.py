@@ -41,11 +41,11 @@ class Database:
         self.conn.loadextension(sqlite_vec.loadable_path())
         self.conn.enableloadextension(False)
 
-        # Configure for performance
+        # Configure for performance (conservative memory settings)
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=NORMAL")
-        self.conn.execute("PRAGMA mmap_size=268435456")  # 256MB
-        self.conn.execute("PRAGMA cache_size=-64000")  # 64MB
+        self.conn.execute("PRAGMA mmap_size=67108864")  # 64MB (reduced from 256MB)
+        self.conn.execute("PRAGMA cache_size=-8000")  # 8MB (reduced from 64MB)
         self.conn.execute("PRAGMA foreign_keys=ON")  # Enable FK constraints
 
         self._create_tables()
