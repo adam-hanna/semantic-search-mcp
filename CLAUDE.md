@@ -130,6 +130,7 @@ python -m semantic_search_mcp.server
 | `SEMANTIC_SEARCH_QUEUE_MAX_SIZE` | `1000` | File watcher queue size |
 | `SEMANTIC_SEARCH_DEBOUNCE_MS` | `1000` | Watcher debounce delay |
 | `SEMANTIC_SEARCH_BATCH_SIZE` | `50` | Files per batch (memory management) |
+| `SEMANTIC_SEARCH_MAX_FILE_SIZE_KB` | `512` | Skip files larger than this (KB) |
 
 ## MCP Tools
 

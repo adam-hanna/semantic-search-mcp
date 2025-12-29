@@ -28,6 +28,7 @@ class FileIndexer:
         root_dir: Path,
         chunk_overlap: int = 50,
         max_chunk_tokens: int = 2000,
+        max_file_size_kb: int = 512,
     ):
         """Initialize indexer.
 
@@ -37,12 +38,14 @@ class FileIndexer:
             root_dir: Root directory for indexing
             chunk_overlap: Token overlap between chunks
             max_chunk_tokens: Maximum tokens per chunk
+            max_file_size_kb: Skip files larger than this (KB)
         """
         self.db = db
         self.embedder = embedder
         self.root_dir = Path(root_dir).resolve()
         self.chunker = CodeChunker(overlap_tokens=chunk_overlap, max_tokens=max_chunk_tokens)
         self.gitignore = GitignoreFilter(root_dir)
+        self.max_file_size_bytes = max_file_size_kb * 1024
 
     def _hash_content(self, content: str) -> str:
         """Generate SHA256 hash of content."""
@@ -84,6 +87,16 @@ class FileIndexer:
         filepath = Path(filepath).resolve()
         path_str = str(filepath)
 
+        # Check file size before reading
+        try:
+            file_size = filepath.stat().st_size
+            if file_size > self.max_file_size_bytes:
+                logger.debug(f"Skipping large file ({file_size // 1024}KB): {filepath.name}")
+                return {"status": "skipped", "reason": f"too large ({file_size // 1024}KB)", "chunks": 0}
+        except OSError as e:
+            logger.warning(f"Cannot stat {filepath}: {e}")
+            return {"status": "skipped", "reason": "cannot stat", "chunks": 0}
+
         # Read content
         content = self._read_file_safe(filepath)
         if content is None:
@@ -108,8 +121,13 @@ class FileIndexer:
         try:
             texts = [c.content for c in chunks]
             embeddings = self.embedder.embed(texts)
+        except MemoryError:
+            logger.error(f"Out of memory embedding {filepath.name} ({len(chunks)} chunks)")
+            gc.collect()  # Try to recover
+            return {"status": "error", "reason": "out of memory", "chunks": 0}
         except Exception as e:
             logger.error(f"Embedding failed for {filepath}: {e}")
+            gc.collect()  # Clean up after error
             return {"status": "error", "reason": str(e), "chunks": 0}
 
         # Store in database (atomic transaction)

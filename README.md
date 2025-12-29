@@ -101,6 +101,7 @@ Environment variables:
 | `SEMANTIC_SEARCH_MIN_SCORE` | `0.3` | Minimum relevance threshold (0-1) |
 | `SEMANTIC_SEARCH_DEBOUNCE_MS` | `1000` | File watcher debounce in milliseconds |
 | `SEMANTIC_SEARCH_BATCH_SIZE` | `50` | Files per batch (reduce if running out of memory) |
+| `SEMANTIC_SEARCH_MAX_FILE_SIZE_KB` | `512` | Skip files larger than this (KB) |
 
 ## Requirements
 

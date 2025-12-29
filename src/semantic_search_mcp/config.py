@@ -30,6 +30,7 @@ class Config:
 
     # Indexer settings
     index_batch_size: int = 50  # Files per batch for memory management
+    max_file_size_kb: int = 512  # Skip files larger than this (KB)
 
     def __post_init__(self):
         """Validate configuration values."""
@@ -53,4 +54,5 @@ def load_config() -> Config:
         queue_max_size=int(os.getenv("SEMANTIC_SEARCH_QUEUE_MAX_SIZE", "1000")),
         debounce_ms=int(os.getenv("SEMANTIC_SEARCH_DEBOUNCE_MS", "1000")),
         index_batch_size=int(os.getenv("SEMANTIC_SEARCH_BATCH_SIZE", "50")),
+        max_file_size_kb=int(os.getenv("SEMANTIC_SEARCH_MAX_FILE_SIZE_KB", "512")),
     )

@@ -96,6 +96,7 @@ def create_server(
         db, embedder, root_dir,
         chunk_overlap=config.chunk_overlap_tokens,
         max_chunk_tokens=config.max_chunk_tokens,
+        max_file_size_kb=config.max_file_size_kb,
     )
     searcher = HybridSearcher(db, embedder, rrf_k=config.rrf_k)
     watcher: Optional[FileWatcher] = None
