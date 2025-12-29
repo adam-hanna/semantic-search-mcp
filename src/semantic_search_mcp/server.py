@@ -113,13 +113,13 @@ def create_server(
             state.status = "initializing"
             start_time = time.time()
 
-            # Load embedding model
+            # Load embedding model (run in thread to avoid blocking event loop)
             logger.info("Loading embedding model...")
-            _ = embedder.model
+            await asyncio.to_thread(lambda: embedder.model)
 
-            # Index codebase
+            # Index codebase (run in thread to avoid blocking event loop)
             logger.info(f"Indexing codebase at {root_dir}...")
-            stats = indexer.index_directory(root_dir)
+            stats = await asyncio.to_thread(indexer.index_directory, root_dir)
 
             # Start file watcher
             logger.info("Starting file watcher...")
@@ -205,17 +205,11 @@ def create_server(
         if ctx:
             await ctx.report_progress(0, 100, "Loading embedding model...")
 
-        # Force model load
-        _ = embedder.model
+        # Force model load (run in thread to avoid blocking event loop)
+        await asyncio.to_thread(lambda: embedder.model)
 
         if ctx:
             await ctx.report_progress(20, 100, "Scanning codebase...")
-
-        # Index directory with progress
-        def progress_callback(current: int, total: int, message: str):
-            if ctx and total > 0:
-                pct = 20 + int(70 * current / total)
-                # Note: Can't await inside sync callback, so we skip reporting here
 
         if force_reindex:
             # Clear existing data
@@ -224,7 +218,8 @@ def create_server(
             db.conn.execute("DELETE FROM files")
             db.conn.commit()
 
-        stats = indexer.index_directory(root_dir, progress_callback)
+        # Index directory (run in thread to avoid blocking event loop)
+        stats = await asyncio.to_thread(indexer.index_directory, root_dir)
 
         if ctx:
             await ctx.report_progress(90, 100, "Starting file watcher...")
