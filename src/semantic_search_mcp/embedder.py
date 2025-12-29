@@ -21,6 +21,7 @@ class Embedder:
         model_name: str = "jinaai/jina-embeddings-v2-base-code",
         embedding_dim: int = 768,
         cache_dir: Optional[str] = None,
+        batch_size: int = 8,
     ):
         """Initialize the embedding model.
 
@@ -28,11 +29,13 @@ class Embedder:
             model_name: Name of the embedding model to use
             embedding_dim: Expected embedding dimension
             cache_dir: Optional cache directory for model files
+            batch_size: Texts per embedding call (prevents ONNX memory explosion)
         """
         self.model_name = model_name
         self.embedding_dim = embedding_dim
         self._model: Optional[TextEmbedding] = None
         self._cache_dir = cache_dir
+        self.batch_size = batch_size
 
     def _find_and_clear_model_cache(self) -> bool:
         """Find and clear the fastembed cache for this model.
@@ -100,12 +103,11 @@ class Embedder:
                     raise
         return self._model
 
-    def embed(self, texts: list[str], batch_size: int = 8) -> list[list[float]]:
+    def embed(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings for a list of texts.
 
         Args:
             texts: List of code snippets or queries to embed
-            batch_size: Number of texts to embed at once (reduces memory)
 
         Returns:
             List of embedding vectors
@@ -116,8 +118,8 @@ class Embedder:
         result = []
 
         # Process in small batches to prevent ONNX memory explosion
-        for i in range(0, len(texts), batch_size):
-            batch = texts[i:i + batch_size]
+        for i in range(0, len(texts), self.batch_size):
+            batch = texts[i:i + self.batch_size]
 
             # FastEmbed returns a generator - process one at a time
             for emb in self.model.embed(batch):

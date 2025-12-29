@@ -102,6 +102,7 @@ Environment variables:
 | `SEMANTIC_SEARCH_DEBOUNCE_MS` | `1000` | File watcher debounce in milliseconds |
 | `SEMANTIC_SEARCH_BATCH_SIZE` | `50` | Files per batch (reduce if running out of memory) |
 | `SEMANTIC_SEARCH_MAX_FILE_SIZE_KB` | `512` | Skip files larger than this (KB) |
+| `SEMANTIC_SEARCH_EMBEDDING_BATCH_SIZE` | `8` | Texts per embedding call (reduce if OOM) |
 
 ## Requirements
 

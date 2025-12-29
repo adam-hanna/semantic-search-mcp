@@ -31,6 +31,7 @@ class Config:
     # Indexer settings
     index_batch_size: int = 50  # Files per batch for memory management
     max_file_size_kb: int = 512  # Skip files larger than this (KB)
+    embedding_batch_size: int = 8  # Texts per embedding call (prevents ONNX memory explosion)
 
     def __post_init__(self):
         """Validate configuration values."""
@@ -55,4 +56,5 @@ def load_config() -> Config:
         debounce_ms=int(os.getenv("SEMANTIC_SEARCH_DEBOUNCE_MS", "1000")),
         index_batch_size=int(os.getenv("SEMANTIC_SEARCH_BATCH_SIZE", "50")),
         max_file_size_kb=int(os.getenv("SEMANTIC_SEARCH_MAX_FILE_SIZE_KB", "512")),
+        embedding_batch_size=int(os.getenv("SEMANTIC_SEARCH_EMBEDDING_BATCH_SIZE", "8")),
     )

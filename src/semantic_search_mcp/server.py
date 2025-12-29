@@ -91,7 +91,11 @@ def create_server(
     # Initialize components (lazy-loaded where possible)
     db_path = root_dir / config.db_path
     db = Database(db_path, embedding_dim=config.embedding_dim)
-    embedder = Embedder(model_name=config.embedding_model, embedding_dim=config.embedding_dim)
+    embedder = Embedder(
+        model_name=config.embedding_model,
+        embedding_dim=config.embedding_dim,
+        batch_size=config.embedding_batch_size,
+    )
     indexer = FileIndexer(
         db, embedder, root_dir,
         chunk_overlap=config.chunk_overlap_tokens,
