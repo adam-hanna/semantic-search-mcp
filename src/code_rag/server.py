@@ -15,7 +15,7 @@ from code_rag.config import Config, load_config
 from code_rag.database import Database
 from code_rag.embedder import Embedder
 from code_rag.indexer import FileIndexer
-from code_rag.searcher import HybridSearcher, SearchResult
+from code_rag.searcher import HybridSearcher
 from code_rag.watcher import FileWatcher
 
 
