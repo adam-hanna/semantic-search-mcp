@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "semantic-search": {
+      "command": "python",
+      "args": ["-m", "code_rag.server"],
+      "env": {
+        "CODE_RAG_DB_PATH": ".code-rag/index.db",
+        "CODE_RAG_EMBEDDING_MODEL": "jinaai/jina-embeddings-v2-base-code"
+      }
+    }
+  }
+}
