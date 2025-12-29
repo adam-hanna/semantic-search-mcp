@@ -10,29 +10,30 @@ An MCP server that provides semantic code search using local embeddings. Search 
 - **Auto-initialization**: Model loads and codebase indexes on server startup
 - **Zero external APIs**: All embeddings generated locally
 
-## Quick Start
-
-### 1. Install
+## Installation
 
 ```bash
-cd /path/to/semantic-search-mcp
-pip install -e .
+uvx install semantic-search-mcp
 ```
 
-### 2. Add to Claude Code
+Or with pip:
+```bash
+pip install semantic-search-mcp
+```
+
+## Quick Start
+
+### Add to Claude Code
 
 **Option A: Project-level config**
 
-Copy `.mcp.json` to your project root:
+Create `.mcp.json` in your project root:
 ```json
 {
   "mcpServers": {
     "semantic-search": {
-      "command": "python",
-      "args": ["-m", "semantic_search_mcp.server"],
-      "env": {
-        "SEMANTIC_SEARCH_DB_PATH": ".semantic-search/index.db"
-      }
+      "command": "uvx",
+      "args": ["semantic-search-mcp"]
     }
   }
 }
@@ -40,10 +41,10 @@ Copy `.mcp.json` to your project root:
 
 **Option B: CLI**
 ```bash
-claude mcp add semantic-search -- python -m semantic_search_mcp.server
+claude mcp add semantic-search -- uvx semantic-search-mcp
 ```
 
-### 3. Use
+### Use
 
 The server auto-initializes on startup. Available tools:
 
@@ -65,3 +66,7 @@ Environment variables:
 
 - Python 3.11+
 - ~700MB disk for embedding model (downloaded on first run)
+
+## License
+
+[MIT](LICENSE)

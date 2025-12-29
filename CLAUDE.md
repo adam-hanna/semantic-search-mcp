@@ -211,3 +211,51 @@ pytest tests/ -v --tb=short
 2. **Memory usage** - embedding model requires ~1GB RAM
 3. **Binary files skipped** - only text files with recognized extensions are indexed
 4. **Large files** - files are chunked but very large single constructs may be truncated
+
+## Publishing to PyPI
+
+### Prerequisites
+```bash
+pip install build twine
+```
+
+### Build the package
+```bash
+python -m build
+```
+
+This creates `dist/semantic_search_mcp-X.Y.Z-py3-none-any.whl` and `.tar.gz`.
+
+### Upload to PyPI
+
+**Test PyPI (recommended first):**
+```bash
+twine upload --repository testpypi dist/*
+```
+
+**Production PyPI:**
+```bash
+twine upload dist/*
+```
+
+### Version bumping
+Update version in `pyproject.toml`:
+```toml
+version = "0.2.0"
+```
+
+### Release checklist
+1. Update version in `pyproject.toml`
+2. Run tests: `pytest tests/ -v`
+3. Build: `python -m build`
+4. Upload to Test PyPI and verify: `twine upload --repository testpypi dist/*`
+5. Test install: `uvx install --index-url https://test.pypi.org/simple/ semantic-search-mcp`
+6. Upload to PyPI: `twine upload dist/*`
+7. Tag release: `git tag v0.2.0 && git push --tags`
+
+## Git Workflow
+
+- `main` - stable releases only
+- `develop` - active development branch
+
+All work should be done on `develop` and merged to `main` for releases.
