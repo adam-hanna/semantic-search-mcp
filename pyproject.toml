@@ -1,5 +1,5 @@
 [project]
-name = "code-rag"
+name = "semantic-search-mcp"
 version = "0.1.0"
 description = "MCP semantic code search server"
 requires-python = ">=3.11"
@@ -23,7 +23,7 @@ dev = [
 ]
 
 [project.scripts]
-code-rag = "code_rag.server:main"
+semantic-search-mcp = "semantic_search_mcp.server:main"
 
 [build-system]
 requires = ["hatchling"]

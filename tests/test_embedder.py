@@ -2,7 +2,7 @@
 """Tests for embedder module."""
 import pytest
 
-from code_rag.embedder import Embedder
+from semantic_search_mcp.embedder import Embedder
 
 
 @pytest.fixture

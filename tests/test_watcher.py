@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from code_rag.watcher import FileWatcher, ChangeEvent
+from semantic_search_mcp.watcher import FileWatcher, ChangeEvent
 
 
 @pytest.fixture

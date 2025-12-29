@@ -1,1 +1,1 @@
-"""Test suite for code-rag."""
+"""Test suite for semantic-search-mcp."""

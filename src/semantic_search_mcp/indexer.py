@@ -1,14 +1,14 @@
-# src/code_rag/indexer.py
+# src/semantic_search_mcp/indexer.py
 """File indexing orchestration."""
 import hashlib
 import logging
 from pathlib import Path
 from typing import Callable, Optional
 
-from code_rag.chunker import CodeChunker
-from code_rag.database import Database
-from code_rag.embedder import Embedder
-from code_rag.gitignore import GitignoreFilter
+from semantic_search_mcp.chunker import CodeChunker
+from semantic_search_mcp.database import Database
+from semantic_search_mcp.embedder import Embedder
+from semantic_search_mcp.gitignore import GitignoreFilter
 
 
 logger = logging.getLogger(__name__)

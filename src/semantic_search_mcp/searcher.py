@@ -1,11 +1,11 @@
-# src/code_rag/searcher.py
+# src/semantic_search_mcp/searcher.py
 """Hybrid vector + FTS search with Reciprocal Rank Fusion."""
 import fnmatch
 from dataclasses import dataclass
 from typing import Optional
 
-from code_rag.database import Database, serialize_embedding
-from code_rag.embedder import Embedder
+from semantic_search_mcp.database import Database, serialize_embedding
+from semantic_search_mcp.embedder import Embedder
 
 
 @dataclass

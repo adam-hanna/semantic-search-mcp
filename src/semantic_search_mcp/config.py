@@ -1,4 +1,4 @@
-"""Configuration management for code-rag."""
+"""Configuration management for semantic-search-mcp."""
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,7 +13,7 @@ class Config:
     embedding_dim: int = 768
 
     # Database settings
-    db_path: Path = field(default_factory=lambda: Path(".code-rag/index.db"))
+    db_path: Path = field(default_factory=lambda: Path(".semantic-search/index.db"))
 
     # Chunking settings
     chunk_overlap_tokens: int = 50
@@ -39,14 +39,14 @@ class Config:
 def load_config() -> Config:
     """Load configuration from environment variables."""
     return Config(
-        embedding_model=os.getenv("CODE_RAG_EMBEDDING_MODEL", "jinaai/jina-embeddings-v2-base-code"),
-        embedding_dim=int(os.getenv("CODE_RAG_EMBEDDING_DIM", "768")),
-        db_path=Path(os.getenv("CODE_RAG_DB_PATH", ".code-rag/index.db")),
-        chunk_overlap_tokens=int(os.getenv("CODE_RAG_CHUNK_OVERLAP", "50")),
-        max_chunk_tokens=int(os.getenv("CODE_RAG_MAX_CHUNK_TOKENS", "2000")),
-        search_default_limit=int(os.getenv("CODE_RAG_SEARCH_LIMIT", "10")),
-        search_min_score=float(os.getenv("CODE_RAG_SEARCH_MIN_SCORE", "0.3")),
-        rrf_k=int(os.getenv("CODE_RAG_RRF_K", "60")),
-        queue_max_size=int(os.getenv("CODE_RAG_QUEUE_MAX_SIZE", "1000")),
-        debounce_ms=int(os.getenv("CODE_RAG_DEBOUNCE_MS", "1000")),
+        embedding_model=os.getenv("SEMANTIC_SEARCH_EMBEDDING_MODEL", "jinaai/jina-embeddings-v2-base-code"),
+        embedding_dim=int(os.getenv("SEMANTIC_SEARCH_EMBEDDING_DIM", "768")),
+        db_path=Path(os.getenv("SEMANTIC_SEARCH_DB_PATH", ".semantic-search/index.db")),
+        chunk_overlap_tokens=int(os.getenv("SEMANTIC_SEARCH_CHUNK_OVERLAP", "50")),
+        max_chunk_tokens=int(os.getenv("SEMANTIC_SEARCH_MAX_CHUNK_TOKENS", "2000")),
+        search_default_limit=int(os.getenv("SEMANTIC_SEARCH_LIMIT", "10")),
+        search_min_score=float(os.getenv("SEMANTIC_SEARCH_MIN_SCORE", "0.3")),
+        rrf_k=int(os.getenv("SEMANTIC_SEARCH_RRF_K", "60")),
+        queue_max_size=int(os.getenv("SEMANTIC_SEARCH_QUEUE_MAX_SIZE", "1000")),
+        debounce_ms=int(os.getenv("SEMANTIC_SEARCH_DEBOUNCE_MS", "1000")),
     )

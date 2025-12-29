@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from code_rag.database import Database
+from semantic_search_mcp.database import Database
 
 
 def test_database_creates_tables(temp_dir: Path):

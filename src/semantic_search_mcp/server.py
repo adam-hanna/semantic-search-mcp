@@ -1,4 +1,4 @@
-# src/code_rag/server.py
+# src/semantic_search_mcp/server.py
 """MCP Server for Semantic Code Search."""
 import asyncio
 import json
@@ -12,12 +12,12 @@ from typing import Optional
 from mcp.server.fastmcp import FastMCP, Context
 from pydantic import BaseModel, Field
 
-from code_rag.config import Config, load_config
-from code_rag.database import Database
-from code_rag.embedder import Embedder
-from code_rag.indexer import FileIndexer
-from code_rag.searcher import HybridSearcher
-from code_rag.watcher import FileWatcher
+from semantic_search_mcp.config import Config, load_config
+from semantic_search_mcp.database import Database
+from semantic_search_mcp.embedder import Embedder
+from semantic_search_mcp.indexer import FileIndexer
+from semantic_search_mcp.searcher import HybridSearcher
+from semantic_search_mcp.watcher import FileWatcher
 
 
 logger = logging.getLogger(__name__)

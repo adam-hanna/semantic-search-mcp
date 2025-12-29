@@ -1,4 +1,4 @@
-# src/code_rag/embedder.py
+# src/semantic_search_mcp/embedder.py
 """FastEmbed wrapper for code embeddings."""
 import math
 from typing import Optional

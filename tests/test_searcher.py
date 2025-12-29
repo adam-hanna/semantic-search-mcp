@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from code_rag.database import Database
-from code_rag.embedder import Embedder
-from code_rag.searcher import HybridSearcher, SearchResult
+from semantic_search_mcp.database import Database
+from semantic_search_mcp.embedder import Embedder
+from semantic_search_mcp.searcher import HybridSearcher, SearchResult
 
 
 @pytest.fixture

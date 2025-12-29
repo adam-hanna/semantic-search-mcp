@@ -5,16 +5,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from code_rag.server import create_server
+from semantic_search_mcp.server import create_server
 
 
 @pytest.fixture
 def mock_components(temp_dir):
     """Create mock components for server testing."""
-    with patch("code_rag.server.Database") as MockDB, \
-         patch("code_rag.server.Embedder") as MockEmbed, \
-         patch("code_rag.server.FileIndexer") as MockIndexer, \
-         patch("code_rag.server.HybridSearcher") as MockSearcher:
+    with patch("semantic_search_mcp.server.Database") as MockDB, \
+         patch("semantic_search_mcp.server.Embedder") as MockEmbed, \
+         patch("semantic_search_mcp.server.FileIndexer") as MockIndexer, \
+         patch("semantic_search_mcp.server.HybridSearcher") as MockSearcher:
 
         mock_db = MagicMock()
         mock_db.get_stats.return_value = {"files": 10, "chunks": 50}

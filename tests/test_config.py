@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from code_rag.config import Config, load_config
+from semantic_search_mcp.config import Config, load_config
 
 
 def test_config_defaults():
@@ -13,7 +13,7 @@ def test_config_defaults():
 
     assert config.embedding_model == "jinaai/jina-embeddings-v2-base-code"
     assert config.embedding_dim == 768
-    assert config.db_path == Path(".code-rag/index.db")
+    assert config.db_path == Path(".semantic-search/index.db")
     assert config.chunk_overlap_tokens == 50
     assert config.max_chunk_tokens == 2000
     assert config.search_default_limit == 10
@@ -25,9 +25,9 @@ def test_config_defaults():
 
 def test_config_from_env(monkeypatch):
     """Config should read from environment variables."""
-    monkeypatch.setenv("CODE_RAG_DB_PATH", "/custom/path/index.db")
-    monkeypatch.setenv("CODE_RAG_EMBEDDING_MODEL", "custom-model")
-    monkeypatch.setenv("CODE_RAG_SEARCH_MIN_SCORE", "0.5")
+    monkeypatch.setenv("SEMANTIC_SEARCH_DB_PATH", "/custom/path/index.db")
+    monkeypatch.setenv("SEMANTIC_SEARCH_EMBEDDING_MODEL", "custom-model")
+    monkeypatch.setenv("SEMANTIC_SEARCH_MIN_SCORE", "0.5")
 
     config = load_config()
 

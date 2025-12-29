@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from code_rag.chunker import CodeChunker, Chunk
+from semantic_search_mcp.chunker import CodeChunker, Chunk
 
 
 @pytest.fixture

@@ -1,4 +1,4 @@
-# src/code_rag/database.py
+# src/semantic_search_mcp/database.py
 """SQLite database with sqlite-vec and FTS5 for hybrid search."""
 import struct
 from pathlib import Path

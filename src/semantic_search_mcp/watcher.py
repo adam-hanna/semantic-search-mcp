@@ -1,4 +1,4 @@
-# src/code_rag/watcher.py
+# src/semantic_search_mcp/watcher.py
 """File system watcher for incremental indexing."""
 import asyncio
 import logging
@@ -9,7 +9,7 @@ from typing import Optional
 
 from watchfiles import Change, awatch
 
-from code_rag.indexer import FileIndexer
+from semantic_search_mcp.indexer import FileIndexer
 
 
 logger = logging.getLogger(__name__)

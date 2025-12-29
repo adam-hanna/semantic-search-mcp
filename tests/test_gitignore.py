@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from code_rag.gitignore import GitignoreFilter
+from semantic_search_mcp.gitignore import GitignoreFilter
 
 
 @pytest.fixture
