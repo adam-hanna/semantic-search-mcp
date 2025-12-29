@@ -28,6 +28,9 @@ class Config:
     queue_max_size: int = 1000
     debounce_ms: int = 1000
 
+    # Indexer settings
+    index_batch_size: int = 50  # Files per batch for memory management
+
     def __post_init__(self):
         """Validate configuration values."""
         if isinstance(self.db_path, str):
@@ -49,4 +52,5 @@ def load_config() -> Config:
         rrf_k=int(os.getenv("SEMANTIC_SEARCH_RRF_K", "60")),
         queue_max_size=int(os.getenv("SEMANTIC_SEARCH_QUEUE_MAX_SIZE", "1000")),
         debounce_ms=int(os.getenv("SEMANTIC_SEARCH_DEBOUNCE_MS", "1000")),
+        index_batch_size=int(os.getenv("SEMANTIC_SEARCH_BATCH_SIZE", "50")),
     )

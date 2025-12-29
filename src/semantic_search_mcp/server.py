@@ -119,7 +119,9 @@ def create_server(
 
             # Index codebase (run in thread to avoid blocking event loop)
             logger.info(f"Indexing codebase at {root_dir}...")
-            stats = await asyncio.to_thread(indexer.index_directory, root_dir)
+            stats = await asyncio.to_thread(
+                indexer.index_directory, root_dir, None, config.index_batch_size
+            )
 
             # Start file watcher
             logger.info("Starting file watcher...")
@@ -219,7 +221,9 @@ def create_server(
             db.conn.commit()
 
         # Index directory (run in thread to avoid blocking event loop)
-        stats = await asyncio.to_thread(indexer.index_directory, root_dir)
+        stats = await asyncio.to_thread(
+            indexer.index_directory, root_dir, None, config.index_batch_size
+        )
 
         if ctx:
             await ctx.report_progress(90, 100, "Starting file watcher...")

@@ -1,5 +1,6 @@
 # src/semantic_search_mcp/indexer.py
 """File indexing orchestration."""
+import gc
 import hashlib
 import logging
 from pathlib import Path
@@ -12,6 +13,9 @@ from semantic_search_mcp.gitignore import GitignoreFilter
 
 
 logger = logging.getLogger(__name__)
+
+# Default batch size for memory-efficient indexing
+DEFAULT_BATCH_SIZE = 50
 
 
 class FileIndexer:
@@ -156,12 +160,14 @@ class FileIndexer:
         self,
         directory: Optional[Path] = None,
         progress_callback: Optional[Callable[[int, int, str], None]] = None,
+        batch_size: int = DEFAULT_BATCH_SIZE,
     ) -> dict:
-        """Index all files in a directory.
+        """Index all files in a directory with memory-efficient batching.
 
         Args:
             directory: Directory to index (defaults to root_dir)
             progress_callback: Callback(current, total, message)
+            batch_size: Number of files to process before garbage collection
 
         Returns:
             Stats dict with files_indexed, files_skipped, etc.
@@ -179,6 +185,8 @@ class FileIndexer:
             "total_chunks": 0,
         }
 
+        logger.info(f"Found {total} files to index (batch size: {batch_size})")
+
         for i, filepath in enumerate(files):
             if progress_callback:
                 progress_callback(i, total, f"Indexing {filepath.name}")
@@ -193,8 +201,25 @@ class FileIndexer:
             else:
                 stats["files_error"] += 1
 
+            # Memory management: run garbage collection after each batch
+            if (i + 1) % batch_size == 0:
+                gc.collect()
+                logger.info(
+                    f"Progress: {i + 1}/{total} files "
+                    f"({stats['files_indexed']} indexed, {stats['files_skipped']} skipped)"
+                )
+
+        # Final garbage collection
+        gc.collect()
+
         if progress_callback:
             progress_callback(total, total, "Complete")
+
+        logger.info(
+            f"Indexing complete: {stats['files_indexed']} indexed, "
+            f"{stats['files_skipped']} skipped, {stats['files_error']} errors, "
+            f"{stats['total_chunks']} chunks"
+        )
 
         return stats
 
