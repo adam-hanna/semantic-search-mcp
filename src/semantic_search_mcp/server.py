@@ -22,10 +22,6 @@ from semantic_search_mcp.watcher import FileWatcher
 
 logger = logging.getLogger(__name__)
 
-# Global state for auto-initialization
-_initialized = False
-_init_stats: dict = {}
-
 
 # Structured output models
 class CodeMatch(BaseModel):
@@ -46,6 +42,7 @@ class SearchResults(BaseModel):
     matches: list[CodeMatch]
     total_count: int
     search_time_ms: float
+    status: str = Field(default="ready", description="Server status: initializing, ready, or error")
 
 
 class InitializeResult(BaseModel):
@@ -64,6 +61,17 @@ class IndexStats(BaseModel):
     schema_version: Optional[str]
 
 
+class ServerState:
+    """Tracks server initialization state."""
+    def __init__(self):
+        self.status = "pending"  # pending, initializing, ready, error
+        self.error: Optional[str] = None
+        self.files_indexed = 0
+        self.total_chunks = 0
+        self.model = ""
+        self.init_time_ms = 0.0
+
+
 def create_server(
     root_dir: Optional[Path] = None,
     config: Optional[Config] = None,
@@ -77,8 +85,6 @@ def create_server(
     Returns:
         Configured FastMCP instance
     """
-    global _initialized, _init_stats
-
     config = config or load_config()
     root_dir = Path(root_dir or os.getcwd()).resolve()
 
@@ -93,50 +99,69 @@ def create_server(
     )
     searcher = HybridSearcher(db, embedder, rrf_k=config.rrf_k)
     watcher: Optional[FileWatcher] = None
+    state = ServerState()
 
     # Store metadata
     db.set_meta("model_name", config.embedding_model)
     db.set_meta("schema_version", "1")
 
+    async def background_init():
+        """Run initialization in background."""
+        nonlocal watcher
+
+        try:
+            state.status = "initializing"
+            start_time = time.time()
+
+            # Load embedding model
+            logger.info("Loading embedding model...")
+            _ = embedder.model
+
+            # Index codebase
+            logger.info(f"Indexing codebase at {root_dir}...")
+            stats = indexer.index_directory(root_dir)
+
+            # Start file watcher
+            logger.info("Starting file watcher...")
+            watcher = FileWatcher(
+                indexer, root_dir,
+                queue_max_size=config.queue_max_size,
+                debounce_ms=config.debounce_ms,
+            )
+            asyncio.create_task(watcher.start())
+
+            elapsed = (time.time() - start_time) * 1000
+            state.status = "ready"
+            state.files_indexed = stats["files_indexed"]
+            state.total_chunks = stats["total_chunks"]
+            state.model = config.embedding_model
+            state.init_time_ms = elapsed
+
+            logger.info(f"Ready in {elapsed:.0f}ms: {stats['files_indexed']} files, {stats['total_chunks']} chunks")
+
+        except Exception as e:
+            state.status = "error"
+            state.error = str(e)
+            logger.error(f"Initialization failed: {e}")
+
     @asynccontextmanager
     async def lifespan(app):
-        """Auto-initialize on server startup."""
-        global _initialized, _init_stats
+        """Start server immediately, initialize in background."""
         nonlocal watcher
 
         logger.info("Starting semantic code search server...")
-        start_time = time.time()
 
-        # Load embedding model
-        logger.info("Loading embedding model...")
-        _ = embedder.model
+        # Start initialization in background (non-blocking)
+        init_task = asyncio.create_task(background_init())
 
-        # Index codebase
-        logger.info(f"Indexing codebase at {root_dir}...")
-        stats = indexer.index_directory(root_dir)
-
-        # Start file watcher
-        logger.info("Starting file watcher...")
-        watcher = FileWatcher(
-            indexer, root_dir,
-            queue_max_size=config.queue_max_size,
-            debounce_ms=config.debounce_ms,
-        )
-        asyncio.create_task(watcher.start())
-
-        elapsed = (time.time() - start_time) * 1000
-        _initialized = True
-        _init_stats = {
-            "files_indexed": stats["files_indexed"],
-            "total_chunks": stats["total_chunks"],
-            "model": config.embedding_model,
-        }
-
-        logger.info(f"Ready in {elapsed:.0f}ms: {stats['files_indexed']} files, {stats['total_chunks']} chunks")
-
-        yield  # Server runs here
+        yield  # Server starts accepting connections immediately
 
         # Cleanup on shutdown
+        init_task.cancel()
+        try:
+            await init_task
+        except asyncio.CancelledError:
+            pass
         if watcher:
             await watcher.stop()
         logger.info("Server stopped.")
@@ -146,12 +171,13 @@ def create_server(
         instructions="""
         Semantic code search for finding relevant code using natural language.
 
-        The server auto-initializes on startup. Use `search_code` with natural language queries like:
+        The server auto-initializes in the background. Use `search_code` with natural language queries like:
         - "function that handles user authentication"
         - "error handling for HTTP requests"
         - "database connection initialization"
 
         The search combines semantic similarity with keyword matching for best results.
+        If the server is still initializing, search will wait briefly or return a status message.
         """,
         lifespan=lifespan,
     )
@@ -165,13 +191,14 @@ def create_server(
         ctx: Context = None,
     ) -> InitializeResult:
         """
-        Initialize the semantic code search system.
+        Initialize or re-initialize the semantic code search system.
 
         Loads the embedding model and builds or updates the code index.
-        Call this once per session before searching.
+        Use force_reindex=True to rebuild the entire index.
 
         Progress will be reported during indexing.
         """
+        nonlocal watcher
         start_time = time.time()
 
         # Report progress
@@ -202,8 +229,7 @@ def create_server(
         if ctx:
             await ctx.report_progress(90, 100, "Starting file watcher...")
 
-        # Start file watcher
-        nonlocal watcher
+        # Start file watcher if not already running
         if watcher is None:
             watcher = FileWatcher(
                 indexer, root_dir,
@@ -216,6 +242,10 @@ def create_server(
             await ctx.report_progress(100, 100, "Ready")
 
         elapsed = (time.time() - start_time) * 1000
+        state.status = "ready"
+        state.files_indexed = stats["files_indexed"]
+        state.total_chunks = stats["total_chunks"]
+
         logger.info(f"Initialized in {elapsed:.0f}ms: {stats['files_indexed']} files, {stats['total_chunks']} chunks")
 
         return InitializeResult(
@@ -268,6 +298,35 @@ def create_server(
         """
         start_time = time.time()
 
+        # Wait for initialization if still in progress (with timeout)
+        if state.status == "initializing":
+            if ctx:
+                await ctx.info("Server is initializing, please wait...")
+            # Wait up to 60 seconds for initialization
+            for _ in range(120):
+                if state.status != "initializing":
+                    break
+                await asyncio.sleep(0.5)
+
+        if state.status == "error":
+            return SearchResults(
+                query=query,
+                matches=[],
+                total_count=0,
+                search_time_ms=0,
+                status=f"error: {state.error}",
+            )
+
+        if state.status not in ("ready", "initializing"):
+            # Still pending - initialization hasn't started yet
+            return SearchResults(
+                query=query,
+                matches=[],
+                total_count=0,
+                search_time_ms=0,
+                status="initializing",
+            )
+
         if ctx:
             await ctx.info(f"Searching: '{query}'")
 
@@ -305,6 +364,7 @@ def create_server(
             matches=matches,
             total_count=len(matches),
             search_time_ms=elapsed,
+            status="ready",
         )
 
     @mcp.tool()
@@ -334,7 +394,11 @@ def create_server(
     def get_status() -> str:
         """Current index status and statistics."""
         stats = db.get_stats()
-        return json.dumps(IndexStats(**stats).model_dump(), indent=2)
+        result = IndexStats(**stats).model_dump()
+        result["server_status"] = state.status
+        if state.error:
+            result["error"] = state.error
+        return json.dumps(result, indent=2)
 
     return mcp
 
@@ -346,7 +410,7 @@ def main():
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
 
-    root_dir = Path(os.getenv("CODE_RAG_ROOT", os.getcwd()))
+    root_dir = Path(os.getenv("SEMANTIC_SEARCH_ROOT", os.getcwd()))
     mcp = create_server(root_dir)
     mcp.run()
 
