@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -20,6 +21,10 @@ from code_rag.watcher import FileWatcher
 
 
 logger = logging.getLogger(__name__)
+
+# Global state for auto-initialization
+_initialized = False
+_init_stats: dict = {}
 
 
 # Structured output models
@@ -72,6 +77,8 @@ def create_server(
     Returns:
         Configured FastMCP instance
     """
+    global _initialized, _init_stats
+
     config = config or load_config()
     root_dir = Path(root_dir or os.getcwd()).resolve()
 
@@ -91,19 +98,62 @@ def create_server(
     db.set_meta("model_name", config.embedding_model)
     db.set_meta("schema_version", "1")
 
+    @asynccontextmanager
+    async def lifespan(app):
+        """Auto-initialize on server startup."""
+        global _initialized, _init_stats
+        nonlocal watcher
+
+        logger.info("Starting semantic code search server...")
+        start_time = time.time()
+
+        # Load embedding model
+        logger.info("Loading embedding model...")
+        _ = embedder.model
+
+        # Index codebase
+        logger.info(f"Indexing codebase at {root_dir}...")
+        stats = indexer.index_directory(root_dir)
+
+        # Start file watcher
+        logger.info("Starting file watcher...")
+        watcher = FileWatcher(
+            indexer, root_dir,
+            queue_max_size=config.queue_max_size,
+            debounce_ms=config.debounce_ms,
+        )
+        asyncio.create_task(watcher.start())
+
+        elapsed = (time.time() - start_time) * 1000
+        _initialized = True
+        _init_stats = {
+            "files_indexed": stats["files_indexed"],
+            "total_chunks": stats["total_chunks"],
+            "model": config.embedding_model,
+        }
+
+        logger.info(f"Ready in {elapsed:.0f}ms: {stats['files_indexed']} files, {stats['total_chunks']} chunks")
+
+        yield  # Server runs here
+
+        # Cleanup on shutdown
+        if watcher:
+            await watcher.stop()
+        logger.info("Server stopped.")
+
     mcp = FastMCP(
         name="SemanticCodeSearch",
         instructions="""
         Semantic code search for finding relevant code using natural language.
 
-        First, call `initialize` to load the embedding model and build/update the index.
-        Then use `search_code` with natural language queries like:
+        The server auto-initializes on startup. Use `search_code` with natural language queries like:
         - "function that handles user authentication"
         - "error handling for HTTP requests"
         - "database connection initialization"
 
         The search combines semantic similarity with keyword matching for best results.
-        """
+        """,
+        lifespan=lifespan,
     )
 
     @mcp.tool()
