@@ -1,5 +1,6 @@
 # src/semantic_search_mcp/embedder.py
 """FastEmbed wrapper for code embeddings."""
+import gc
 import logging
 import math
 import shutil
@@ -99,11 +100,12 @@ class Embedder:
                     raise
         return self._model
 
-    def embed(self, texts: list[str]) -> list[list[float]]:
+    def embed(self, texts: list[str], batch_size: int = 8) -> list[list[float]]:
         """Generate embeddings for a list of texts.
 
         Args:
             texts: List of code snippets or queries to embed
+            batch_size: Number of texts to embed at once (reduces memory)
 
         Returns:
             List of embedding vectors
@@ -111,12 +113,20 @@ class Embedder:
         if not texts:
             return []
 
-        # FastEmbed returns a generator - process one at a time to avoid
-        # holding all numpy arrays in memory simultaneously
         result = []
-        for emb in self.model.embed(texts):
-            result.append(list(emb))  # Convert numpy to list immediately
-            del emb  # Explicitly free numpy array
+
+        # Process in small batches to prevent ONNX memory explosion
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i:i + batch_size]
+
+            # FastEmbed returns a generator - process one at a time
+            for emb in self.model.embed(batch):
+                result.append(list(emb))  # Convert numpy to list immediately
+                del emb  # Explicitly free numpy array
+
+            # Force cleanup between batches
+            gc.collect()
+
         return result
 
     def embed_query(self, query: str) -> list[float]:
