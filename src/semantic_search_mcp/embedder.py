@@ -40,6 +40,19 @@ def _get_gpu_provider() -> tuple[bool, str | None]:
     except Exception:
         return False, None
 
+
+def _is_cuda_available() -> bool:
+    """Check specifically if NVIDIA CUDA is available.
+
+    FastEmbed's cuda parameter only works with NVIDIA GPUs.
+    Other providers (CoreML, ROCm, etc.) are used automatically by ONNX.
+    """
+    try:
+        import onnxruntime as ort
+        return "CUDAExecutionProvider" in ort.get_available_providers()
+    except Exception:
+        return False
+
 # Known model dimensions (fallback if not in fastembed metadata)
 MODEL_DIMENSIONS = {
     "jinaai/jina-embeddings-v2-base-code": 768,
@@ -249,15 +262,21 @@ class Embedder:
 
             # Auto-detect GPU availability
             gpu_available, gpu_provider = _get_gpu_provider()
+            use_cuda = _is_cuda_available()  # FastEmbed's cuda param only works with NVIDIA
+
             if gpu_available:
-                logger.info(f"GPU detected ({gpu_provider}), using hardware acceleration")
+                if use_cuda:
+                    logger.info(f"NVIDIA GPU detected, using CUDA acceleration")
+                else:
+                    # CoreML, ROCm, etc. are used automatically by ONNX runtime
+                    logger.info(f"GPU detected ({gpu_provider}), ONNX will use it automatically")
 
             try:
                 self._model = TextEmbedding(
                     model_name=self.model_name,
                     cache_dir=self._cache_dir,
                     threads=self.threads,
-                    cuda=gpu_available,  # FastEmbed uses 'cuda' but it works for other GPU providers too
+                    cuda=use_cuda,  # Only True for NVIDIA CUDA
                 )
             except Exception as e:
                 error_msg = str(e).lower()
@@ -271,7 +290,7 @@ class Embedder:
                                 model_name=self.model_name,
                                 cache_dir=self._cache_dir,
                                 threads=self.threads,
-                                cuda=gpu_available,
+                                cuda=use_cuda,
                             )
                         except Exception as retry_error:
                             raise RuntimeError(
@@ -301,7 +320,7 @@ class Embedder:
                             model_name=self.model_name,
                             cache_dir=self._cache_dir,
                             threads=self.threads,
-                            cuda=gpu_available,
+                            cuda=use_cuda,
                         )
 
         return self._model
