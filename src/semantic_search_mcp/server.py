@@ -530,6 +530,49 @@ def create_server(
             "progress": state.indexing_progress.copy(),
         }
 
+    @mcp.tool()
+    async def clear_index() -> dict:
+        """
+        Clear all indexed data.
+
+        Removes all files and chunks from the index.
+        The index will be empty until reindex is called.
+        """
+        if components.db is None:
+            return {"status": "error", "reason": "Database not initialized"}
+
+        # Cancel any running indexing first
+        if state.indexing_in_progress:
+            state.indexing_cancelled = True
+            # Wait briefly for cancellation
+            for _ in range(10):
+                if not state.indexing_in_progress:
+                    break
+                await asyncio.sleep(0.1)
+
+        # Get current counts
+        stats = components.db.get_stats()
+        files_removed = stats.get("files", 0)
+        chunks_removed = stats.get("chunks", 0)
+
+        # Clear the database
+        components.db.conn.execute("DELETE FROM vec_chunks")
+        components.db.conn.execute("DELETE FROM chunks")
+        components.db.conn.execute("DELETE FROM files")
+        components.db.conn.commit()
+
+        # Update state
+        state.files_indexed = 0
+        state.total_chunks = 0
+
+        logger.info(f"Cleared index: {files_removed} files, {chunks_removed} chunks")
+
+        return {
+            "status": "cleared",
+            "files_removed": files_removed,
+            "chunks_removed": chunks_removed,
+        }
+
     @mcp.resource("search://status")
     def get_status() -> str:
         """Current index status and statistics."""

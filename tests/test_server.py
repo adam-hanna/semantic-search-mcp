@@ -285,3 +285,118 @@ async def test_cancel_indexing_sets_flag(mock_components):
     assert result["status"] == "cancelling"
     assert result["progress"] == {"current": 5, "total": 10, "current_file": "test.py"}
     assert state.indexing_cancelled is True
+
+
+def test_server_has_clear_index_tool(mock_components):
+    """Server should have a clear_index tool."""
+    mcp = create_server(mock_components["temp_dir"])
+
+    tool_names = [t.name for t in mcp._tool_manager._tools.values()]
+    assert "clear_index" in tool_names
+
+
+@pytest.mark.asyncio
+async def test_clear_index_returns_error_when_db_not_initialized(mock_components):
+    """clear_index should return error when database is not initialized."""
+    mcp = create_server(mock_components["temp_dir"])
+
+    # Get the tool
+    tools = {t.name: t for t in mcp._tool_manager._tools.values()}
+    clear_tool = tools["clear_index"]
+
+    # Without lifespan, db is None
+    result = await clear_tool.fn()
+
+    assert result["status"] == "error"
+    assert result["reason"] == "Database not initialized"
+
+
+@pytest.mark.asyncio
+async def test_clear_index_wipes_all_data(mock_components):
+    """clear_index should wipe all indexed data."""
+    mcp = create_server(mock_components["temp_dir"])
+
+    # Get the tool
+    tools = {t.name: t for t in mcp._tool_manager._tools.values()}
+    clear_tool = tools["clear_index"]
+
+    # Access the closure variables from the tool function
+    func = clear_tool.fn
+    closure_vars = {
+        name: cell.cell_contents
+        for name, cell in zip(func.__code__.co_freevars, func.__closure__)
+    }
+
+    # Set up mock components and state
+    components = closure_vars["components"]
+    state = closure_vars["state"]
+
+    # Create a mock database with get_stats, conn, and commit
+    mock_db = MagicMock()
+    mock_db.get_stats.return_value = {"files": 10, "chunks": 50}
+    mock_db.conn = MagicMock()
+    components.db = mock_db
+
+    # Set some initial state
+    state.files_indexed = 10
+    state.total_chunks = 50
+
+    # Call clear_index
+    result = await clear_tool.fn()
+
+    # Verify result
+    assert result["status"] == "cleared"
+    assert result["files_removed"] == 10
+    assert result["chunks_removed"] == 50
+
+    # Verify database was cleared
+    mock_db.conn.execute.assert_any_call("DELETE FROM vec_chunks")
+    mock_db.conn.execute.assert_any_call("DELETE FROM chunks")
+    mock_db.conn.execute.assert_any_call("DELETE FROM files")
+    mock_db.conn.commit.assert_called_once()
+
+    # Verify state was updated
+    assert state.files_indexed == 0
+    assert state.total_chunks == 0
+
+
+@pytest.mark.asyncio
+async def test_clear_index_cancels_running_indexing(mock_components):
+    """clear_index should cancel any running indexing before clearing."""
+    mcp = create_server(mock_components["temp_dir"])
+
+    # Get the tool
+    tools = {t.name: t for t in mcp._tool_manager._tools.values()}
+    clear_tool = tools["clear_index"]
+
+    # Access the closure variables from the tool function
+    func = clear_tool.fn
+    closure_vars = {
+        name: cell.cell_contents
+        for name, cell in zip(func.__code__.co_freevars, func.__closure__)
+    }
+
+    # Set up mock components and state
+    components = closure_vars["components"]
+    state = closure_vars["state"]
+
+    # Create a mock database
+    mock_db = MagicMock()
+    mock_db.get_stats.return_value = {"files": 5, "chunks": 25}
+    mock_db.conn = MagicMock()
+    components.db = mock_db
+
+    # Set indexing as in progress (will be "cancelled" immediately since loop checks)
+    state.indexing_in_progress = True
+    state.indexing_cancelled = False
+
+    # Call clear_index
+    result = await clear_tool.fn()
+
+    # Verify cancellation was triggered
+    assert state.indexing_cancelled is True
+
+    # Verify clearing still happened
+    assert result["status"] == "cleared"
+    assert result["files_removed"] == 5
+    assert result["chunks_removed"] == 25
