@@ -184,3 +184,45 @@ async def test_pause_watcher_updates_state(mock_components):
 
     # The tool properly checks for watcher initialization
     # More comprehensive integration tests would run with full lifespan
+
+
+def test_server_has_resume_watcher_tool(mock_components):
+    """Server should have a resume_watcher tool."""
+    mcp = create_server(mock_components["temp_dir"])
+
+    tool_names = [t.name for t in mcp._tool_manager._tools.values()]
+    assert "resume_watcher" in tool_names
+
+
+@pytest.mark.asyncio
+async def test_resume_watcher_tool_returns_error_when_watcher_not_initialized(mock_components):
+    """resume_watcher should return error when watcher is not initialized."""
+    mcp = create_server(mock_components["temp_dir"])
+
+    # Get access to internal components via the tool directly
+    # The watcher is None initially (before lifespan starts)
+    tools = {t.name: t for t in mcp._tool_manager._tools.values()}
+    assert "resume_watcher" in tools
+
+    # Call the tool function directly (watcher is None at this point)
+    resume_tool = tools["resume_watcher"]
+    result = await resume_tool.fn()
+
+    assert result["status"] == "error"
+    assert result["reason"] == "Watcher not initialized"
+
+
+@pytest.mark.asyncio
+async def test_resume_watcher_when_not_paused(mock_components):
+    """resume_watcher when already running should return already_running."""
+    mcp = create_server(mock_components["temp_dir"])
+
+    # Get the tool
+    tools = {t.name: t for t in mcp._tool_manager._tools.values()}
+    assert "resume_watcher" in tools
+
+    # Without lifespan, watcher is not initialized, so we get error
+    resume_tool = tools["resume_watcher"]
+    result = await resume_tool.fn()
+    assert result["status"] == "error"
+    assert result["reason"] == "Watcher not initialized"

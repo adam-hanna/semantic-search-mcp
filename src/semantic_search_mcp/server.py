@@ -494,6 +494,24 @@ def create_server(
 
         return {"status": "paused", "events_discarded": discarded}
 
+    @mcp.tool()
+    async def resume_watcher() -> dict:
+        """
+        Resume the file watcher after pausing.
+
+        Starts watching for file changes again.
+        """
+        if components.watcher is None:
+            return {"status": "error", "reason": "Watcher not initialized"}
+
+        if state.watcher_status == "running":
+            return {"status": "already_running"}
+
+        await components.watcher.resume()
+        state.watcher_status = "running"
+
+        return {"status": "running"}
+
     @mcp.resource("search://status")
     def get_status() -> str:
         """Current index status and statistics."""
