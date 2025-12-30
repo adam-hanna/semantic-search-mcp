@@ -622,8 +622,49 @@ def create_server(
             "excluded_patterns": current,
         }
 
+    @mcp.tool()
+    async def get_status() -> dict:
+        """
+        Get comprehensive server status.
+
+        Returns server state, watcher status, indexing progress,
+        index statistics, and current exclusion patterns.
+        """
+        # Get database stats if available
+        if components.db is not None:
+            db_stats = components.db.get_stats()
+        else:
+            db_stats = {"files": 0, "chunks": 0}
+
+        # Get exclusion patterns if available
+        if components.indexer is not None:
+            excluded = components.indexer.gitignore.get_exclusions()
+        else:
+            excluded = []
+
+        return {
+            "server_status": state.status,
+            "watcher_status": state.watcher_status,
+            "indexing": {
+                "in_progress": state.indexing_in_progress,
+                "current_file": state.indexing_progress.get("current_file", ""),
+                "progress": {
+                    "current": state.indexing_progress.get("current", 0),
+                    "total": state.indexing_progress.get("total", 0),
+                },
+            },
+            "index": {
+                "files": db_stats.get("files", state.files_indexed),
+                "chunks": db_stats.get("chunks", state.total_chunks),
+                "last_indexed": state.last_indexed_at,
+            },
+            "excluded_patterns": excluded,
+            "model": state.model,
+            "error": state.error,
+        }
+
     @mcp.resource("search://status")
-    def get_status() -> str:
+    def get_status_resource() -> str:
         """Current index status and statistics."""
         if components.db is None:
             result = {

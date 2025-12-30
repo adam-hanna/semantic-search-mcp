@@ -525,3 +525,163 @@ async def test_include_paths_removes_patterns_from_gitignore(mock_components):
     # Verify gitignore.remove_exclusions was called with the patterns
     mock_gitignore.remove_exclusions.assert_called_once_with(["*.test.py"])
     mock_gitignore.get_exclusions.assert_called_once()
+
+
+def test_server_has_get_status_tool(mock_components):
+    """Server should have a get_status tool."""
+    mcp = create_server(mock_components["temp_dir"])
+
+    tool_names = [t.name for t in mcp._tool_manager._tools.values()]
+    assert "get_status" in tool_names
+
+
+@pytest.mark.asyncio
+async def test_get_status_returns_comprehensive_state(mock_components):
+    """get_status should return comprehensive server state."""
+    mcp = create_server(mock_components["temp_dir"])
+
+    # Get the tool
+    tools = {t.name: t for t in mcp._tool_manager._tools.values()}
+    get_status_tool = tools["get_status"]
+
+    # Call get_status (without lifespan, components are None)
+    result = await get_status_tool.fn()
+
+    # Verify result contains all expected keys
+    assert "server_status" in result
+    assert "watcher_status" in result
+    assert "indexing" in result
+    assert "index" in result
+    assert "excluded_patterns" in result
+    assert "model" in result
+    assert "error" in result
+
+    # Verify indexing structure
+    assert "in_progress" in result["indexing"]
+    assert "current_file" in result["indexing"]
+    assert "progress" in result["indexing"]
+    assert "current" in result["indexing"]["progress"]
+    assert "total" in result["indexing"]["progress"]
+
+    # Verify index structure
+    assert "files" in result["index"]
+    assert "chunks" in result["index"]
+    assert "last_indexed" in result["index"]
+
+
+@pytest.mark.asyncio
+async def test_get_status_with_initialized_components(mock_components):
+    """get_status should return data from components when initialized."""
+    mcp = create_server(mock_components["temp_dir"])
+
+    # Get the tool
+    tools = {t.name: t for t in mcp._tool_manager._tools.values()}
+    get_status_tool = tools["get_status"]
+
+    # Access the closure variables from the tool function
+    func = get_status_tool.fn
+    closure_vars = {
+        name: cell.cell_contents
+        for name, cell in zip(func.__code__.co_freevars, func.__closure__)
+    }
+
+    # Set up mock components and state
+    components = closure_vars["components"]
+    state = closure_vars["state"]
+
+    # Create a mock database
+    mock_db = MagicMock()
+    mock_db.get_stats.return_value = {"files": 15, "chunks": 75}
+    components.db = mock_db
+
+    # Create a mock indexer with mock gitignore
+    mock_indexer = MagicMock()
+    mock_gitignore = MagicMock()
+    mock_gitignore.get_exclusions.return_value = ["node_modules", "*.pyc"]
+    mock_indexer.gitignore = mock_gitignore
+    components.indexer = mock_indexer
+
+    # Set up state
+    state.status = "ready"
+    state.watcher_status = "running"
+    state.indexing_in_progress = False
+    state.indexing_progress = {"current": 0, "total": 0, "current_file": ""}
+    state.model = "jinaai/jina-embeddings-v2-base-code"
+    state.error = None
+    state.last_indexed_at = "2024-01-15T10:30:00Z"
+
+    # Call get_status
+    result = await get_status_tool.fn()
+
+    # Verify result reflects the initialized state
+    assert result["server_status"] == "ready"
+    assert result["watcher_status"] == "running"
+    assert result["indexing"]["in_progress"] is False
+    assert result["index"]["files"] == 15
+    assert result["index"]["chunks"] == 75
+    assert result["index"]["last_indexed"] == "2024-01-15T10:30:00Z"
+    assert result["excluded_patterns"] == ["node_modules", "*.pyc"]
+    assert result["model"] == "jinaai/jina-embeddings-v2-base-code"
+    assert result["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_status_during_indexing(mock_components):
+    """get_status should reflect indexing progress when in progress."""
+    mcp = create_server(mock_components["temp_dir"])
+
+    # Get the tool
+    tools = {t.name: t for t in mcp._tool_manager._tools.values()}
+    get_status_tool = tools["get_status"]
+
+    # Access the closure variables from the tool function
+    func = get_status_tool.fn
+    closure_vars = {
+        name: cell.cell_contents
+        for name, cell in zip(func.__code__.co_freevars, func.__closure__)
+    }
+
+    # Set up state for active indexing
+    state = closure_vars["state"]
+    state.status = "initializing"
+    state.indexing_in_progress = True
+    state.indexing_progress = {"current": 5, "total": 20, "current_file": "src/main.py"}
+
+    # Call get_status
+    result = await get_status_tool.fn()
+
+    # Verify indexing state is reflected
+    assert result["server_status"] == "initializing"
+    assert result["indexing"]["in_progress"] is True
+    assert result["indexing"]["current_file"] == "src/main.py"
+    assert result["indexing"]["progress"]["current"] == 5
+    assert result["indexing"]["progress"]["total"] == 20
+
+
+@pytest.mark.asyncio
+async def test_get_status_with_error(mock_components):
+    """get_status should include error when present."""
+    mcp = create_server(mock_components["temp_dir"])
+
+    # Get the tool
+    tools = {t.name: t for t in mcp._tool_manager._tools.values()}
+    get_status_tool = tools["get_status"]
+
+    # Access the closure variables from the tool function
+    func = get_status_tool.fn
+    closure_vars = {
+        name: cell.cell_contents
+        for name, cell in zip(func.__code__.co_freevars, func.__closure__)
+    }
+
+    # Set up state with error
+    state = closure_vars["state"]
+    state.status = "error"
+    state.error = "Failed to load embedding model"
+
+    # Call get_status
+    result = await get_status_tool.fn()
+
+    # Verify error is reflected
+    assert result["server_status"] == "error"
+    assert result["error"] == "Failed to load embedding model"
