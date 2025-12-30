@@ -1,16 +1,48 @@
 # src/semantic_search_mcp/embedder.py
-"""FastEmbed wrapper for code embeddings."""
+"""Embedding models for code search."""
 import gc
 import logging
 import math
 import shutil
 import tempfile
+from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional
 
 from fastembed import TextEmbedding
 
 logger = logging.getLogger(__name__)
+
+
+class BaseEmbedder(ABC):
+    """Abstract base class for embedders."""
+
+    @abstractmethod
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        """Generate embeddings for a list of texts."""
+        pass
+
+    @abstractmethod
+    def embed_query(self, query: str) -> list[float]:
+        """Generate embedding for a single query."""
+        pass
+
+    @abstractmethod
+    def is_loaded(self) -> bool:
+        """Check if the model is loaded."""
+        pass
+
+    @staticmethod
+    def cosine_similarity(a: list[float], b: list[float]) -> float:
+        """Compute cosine similarity between two vectors."""
+        dot_product = sum(x * y for x, y in zip(a, b))
+        norm_a = math.sqrt(sum(x * x for x in a))
+        norm_b = math.sqrt(sum(y * y for y in b))
+
+        if norm_a == 0 or norm_b == 0:
+            return 0.0
+
+        return dot_product / (norm_a * norm_b)
 
 
 def _get_gpu_provider() -> tuple[bool, str | None]:
@@ -55,12 +87,17 @@ def _is_cuda_available() -> bool:
 
 # Known model dimensions (fallback if not in fastembed metadata)
 MODEL_DIMENSIONS = {
+    # FastEmbed models
     "jinaai/jina-embeddings-v2-base-code": 768,
     "jinaai/jina-embeddings-v2-small-en": 512,
     "BAAI/bge-base-en-v1.5": 768,
     "BAAI/bge-small-en-v1.5": 384,
     "nomic-ai/nomic-embed-text-v1.5": 768,
     "sentence-transformers/all-MiniLM-L6-v2": 384,
+    # UniXcoder models (Microsoft)
+    "microsoft/unixcoder-base": 768,
+    "microsoft/unixcoder-base-nine": 768,
+    "microsoft/unixcoder-base-unimodal": 768,
 }
 
 
@@ -81,7 +118,7 @@ def get_model_dimension(model_name: str) -> int:
     return MODEL_DIMENSIONS.get(model_name, 768)
 
 
-class Embedder:
+class Embedder(BaseEmbedder):
     """Generate embeddings for code snippets using FastEmbed."""
 
     def __init__(
@@ -364,26 +401,187 @@ class Embedder:
         """
         return self.embed([query])[0]
 
-    @staticmethod
-    def cosine_similarity(a: list[float], b: list[float]) -> float:
-        """Compute cosine similarity between two vectors.
+    def is_loaded(self) -> bool:
+        """Check if the model is loaded."""
+        return self._model is not None
+
+
+class UniXcoderEmbedder(BaseEmbedder):
+    """Generate embeddings using Microsoft UniXcoder.
+
+    UniXcoder is a unified cross-modal pre-trained model that supports
+    code + AST + comments for better code understanding.
+
+    Requires: pip install semantic-search-mcp[unixcoder]
+    """
+
+    # UniXcoder model variants
+    MODELS = {
+        "microsoft/unixcoder-base": 768,       # 6 languages: java, ruby, python, php, js, go
+        "microsoft/unixcoder-base-nine": 768,  # 9 languages: + c, c++, c#
+        "microsoft/unixcoder-base-unimodal": 768,  # Code only (no NL)
+    }
+
+    def __init__(
+        self,
+        model_name: str = "microsoft/unixcoder-base-nine",
+        embedding_dim: int = 768,
+        batch_size: int = 8,
+        max_length: int = 512,
+    ):
+        """Initialize UniXcoder model.
 
         Args:
-            a: First embedding vector
-            b: Second embedding vector
+            model_name: UniXcoder variant to use
+            embedding_dim: Embedding dimension (768 for all UniXcoder models)
+            batch_size: Texts per batch
+            max_length: Maximum token length (512 is UniXcoder's limit)
+        """
+        self.model_name = model_name
+        self.embedding_dim = embedding_dim
+        self.batch_size = batch_size
+        self.max_length = max_length
+        self._model = None
+        self._tokenizer = None
+        self._device = None
+
+    def _get_device(self):
+        """Detect best available device."""
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                logger.info("CUDA detected, using GPU acceleration")
+                return torch.device("cuda")
+            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                logger.info("Apple Silicon detected, using MPS acceleration")
+                return torch.device("mps")
+            else:
+                logger.info("Using CPU for inference")
+                return torch.device("cpu")
+        except ImportError:
+            raise ImportError(
+                "UniXcoder requires torch. Install with: pip install semantic-search-mcp[unixcoder]"
+            )
+
+    def _load_model(self):
+        """Lazy-load the UniXcoder model."""
+        if self._model is not None:
+            return
+
+        try:
+            import torch
+            from transformers import AutoModel, AutoTokenizer
+        except ImportError:
+            raise ImportError(
+                "UniXcoder requires torch and transformers. "
+                "Install with: pip install semantic-search-mcp[unixcoder]"
+            )
+
+        self._device = self._get_device()
+
+        logger.info(f"Loading UniXcoder model: {self.model_name}")
+        self._tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        self._model = AutoModel.from_pretrained(self.model_name)
+        self._model.to(self._device)
+        self._model.eval()
+        logger.info(f"UniXcoder loaded on {self._device}")
+
+    def _encode_batch(self, texts: list[str]) -> list[list[float]]:
+        """Encode a batch of texts to embeddings."""
+        import torch
+
+        # Tokenize with encoder-only mode prefix
+        # UniXcoder uses special tokens for different modes
+        formatted_texts = [f"<encoder-only> {text}" for text in texts]
+
+        inputs = self._tokenizer(
+            formatted_texts,
+            padding=True,
+            truncation=True,
+            max_length=self.max_length,
+            return_tensors="pt",
+        )
+        inputs = {k: v.to(self._device) for k, v in inputs.items()}
+
+        with torch.no_grad():
+            outputs = self._model(**inputs)
+            # Use CLS token embedding (first token)
+            embeddings = outputs.last_hidden_state[:, 0, :]
+            # Normalize embeddings
+            embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
+
+        # Convert to list and move to CPU
+        return embeddings.cpu().tolist()
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        """Generate embeddings for a list of texts.
+
+        Args:
+            texts: List of code snippets or queries to embed
 
         Returns:
-            Cosine similarity (0 to 1 for normalized vectors)
+            List of embedding vectors
         """
-        dot_product = sum(x * y for x, y in zip(a, b))
-        norm_a = math.sqrt(sum(x * x for x in a))
-        norm_b = math.sqrt(sum(y * y for y in b))
+        if not texts:
+            return []
 
-        if norm_a == 0 or norm_b == 0:
-            return 0.0
+        self._load_model()
 
-        return dot_product / (norm_a * norm_b)
+        result = []
+        for i in range(0, len(texts), self.batch_size):
+            batch = texts[i : i + self.batch_size]
+            batch_embeddings = self._encode_batch(batch)
+            result.extend(batch_embeddings)
+            gc.collect()
+
+        return result
+
+    def embed_query(self, query: str) -> list[float]:
+        """Generate embedding for a single query.
+
+        Args:
+            query: Search query text
+
+        Returns:
+            Embedding vector
+        """
+        return self.embed([query])[0]
 
     def is_loaded(self) -> bool:
         """Check if the model is loaded."""
         return self._model is not None
+
+
+def create_embedder(
+    model_name: str = "jinaai/jina-embeddings-v2-base-code",
+    embedding_dim: Optional[int] = None,
+    batch_size: int = 8,
+    **kwargs,
+) -> BaseEmbedder:
+    """Factory function to create the appropriate embedder.
+
+    Args:
+        model_name: Model to use. UniXcoder models start with 'microsoft/unixcoder'
+        embedding_dim: Embedding dimension (auto-detected if None)
+        batch_size: Texts per batch
+        **kwargs: Additional arguments passed to the embedder
+
+    Returns:
+        Appropriate embedder instance
+    """
+    if model_name.startswith("microsoft/unixcoder"):
+        dim = embedding_dim or UniXcoderEmbedder.MODELS.get(model_name, 768)
+        return UniXcoderEmbedder(
+            model_name=model_name,
+            embedding_dim=dim,
+            batch_size=batch_size,
+        )
+    else:
+        dim = embedding_dim or get_model_dimension(model_name)
+        return Embedder(
+            model_name=model_name,
+            embedding_dim=dim,
+            batch_size=batch_size,
+            **kwargs,
+        )
