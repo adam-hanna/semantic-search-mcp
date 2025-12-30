@@ -117,3 +117,46 @@ def test_filter_handles_nested_gitignore(temp_dir: Path):
 
     assert filter.should_index(temp_dir / "src" / "main.py")
     assert not filter.should_index(temp_dir / "src" / "temp" / "cache.py")
+
+
+def test_runtime_exclusions(tmp_path):
+    """Runtime exclusions should be respected by should_index."""
+    # Create a Python file
+    py_file = tmp_path / "src" / "main.py"
+    py_file.parent.mkdir(parents=True)
+    py_file.write_text("print('hello')")
+
+    gf = GitignoreFilter(tmp_path)
+
+    # File should be indexable initially
+    assert gf.should_index(py_file) is True
+
+    # Add runtime exclusion
+    gf.add_exclusions(["src"])
+    assert gf.should_index(py_file) is False
+    assert "src" in gf.get_exclusions()
+
+    # Remove exclusion
+    gf.remove_exclusions(["src"])
+    assert gf.should_index(py_file) is True
+    assert "src" not in gf.get_exclusions()
+
+
+def test_runtime_exclusions_glob_patterns(tmp_path):
+    """Runtime exclusions should support glob patterns."""
+    test_file = tmp_path / "test_main.py"
+    test_file.write_text("def test(): pass")
+
+    src_file = tmp_path / "main.py"
+    src_file.write_text("def main(): pass")
+
+    gf = GitignoreFilter(tmp_path)
+
+    # Both should be indexable initially
+    assert gf.should_index(test_file) is True
+    assert gf.should_index(src_file) is True
+
+    # Exclude test files
+    gf.add_exclusions(["test_*.py"])
+    assert gf.should_index(test_file) is False
+    assert gf.should_index(src_file) is True
