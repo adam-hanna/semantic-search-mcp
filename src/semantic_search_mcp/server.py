@@ -475,6 +475,25 @@ def create_server(
             "reason": result.get("reason"),
         }
 
+    @mcp.tool()
+    async def pause_watcher() -> dict:
+        """
+        Pause the file watcher.
+
+        Events that occur while paused are discarded.
+        Use resume_watcher to start watching again.
+        """
+        if components.watcher is None:
+            return {"status": "error", "reason": "Watcher not initialized"}
+
+        if state.watcher_status == "paused":
+            return {"status": "already_paused", "events_discarded": 0}
+
+        discarded = await components.watcher.pause()
+        state.watcher_status = "paused"
+
+        return {"status": "paused", "events_discarded": discarded}
+
     @mcp.resource("search://status")
     def get_status() -> str:
         """Current index status and statistics."""
