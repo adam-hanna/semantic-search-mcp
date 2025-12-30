@@ -31,9 +31,27 @@ uvx semantic-search-mcp
 
 ### Add to Claude Code
 
-**Option A: Project-level config**
+**Option A: Project-level config (recommended)**
 
-Create `.mcp.json` in your project root:
+After installing with `uv tool install` or `pip install`, create `.mcp.json` in your project root:
+```json
+{
+  "mcpServers": {
+    "semantic-search": {
+      "command": "semantic-search-mcp"
+    }
+  }
+}
+```
+
+**Option B: CLI**
+```bash
+claude mcp add semantic-search -- semantic-search-mcp
+```
+
+**Option C: Without installing (ephemeral)**
+
+If you prefer not to install, use `uvx` to run in an ephemeral environment:
 ```json
 {
   "mcpServers": {
@@ -45,18 +63,23 @@ Create `.mcp.json` in your project root:
 }
 ```
 
-**Option B: CLI**
-```bash
-claude mcp add semantic-search -- uvx semantic-search-mcp
-```
-
 ### Use
 
-The server auto-initializes on startup. Available tools:
+The server auto-initializes on startup.
 
-- `search_code` - Search with natural language queries
-- `initialize` - Force re-index if needed
-- `reindex_file` - Manually reindex a specific file
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `search_code` | Search codebase with natural language |
+| `get_status` | Get server state, progress, and statistics |
+| `pause_watcher` | Pause file watching (events discarded) |
+| `resume_watcher` | Resume file watching |
+| `reindex` | Start full reindex (runs in background) |
+| `cancel_indexing` | Cancel running indexing job |
+| `clear_index` | Wipe all indexed data |
+| `exclude_paths` | Add paths to ignore (session-only) |
+| `include_paths` | Remove paths from exclusion list |
 
 ## How It Works
 
@@ -164,6 +187,29 @@ export SEMANTIC_SEARCH_EMBEDDING_MODEL="microsoft/unixcoder-base-nine"
 - Large codebases (10,000+ files) - indexing will take hours
 - You need fast initial indexing
 - Running on CPU without GPU acceleration
+
+## Claude Code Integration
+
+Skills and commands are **automatically installed** when the MCP server first starts:
+- **Skills** → `~/.claude/skills/` (AI auto-discovery)
+- **Commands** → `~/.claude/commands/` (user-invocable slash commands)
+
+To manually reinstall or update:
+```bash
+semantic-search-mcp-install-skills
+```
+
+### Available Slash Commands
+
+| Command | Description |
+|---------|-------------|
+| `/semantic-search-search <query>` | Search codebase with natural language |
+| `/semantic-search-status` | Check server status and index stats |
+| `/semantic-search-reindex` | Trigger full codebase reindex |
+| `/semantic-search-cancel` | Cancel running indexing job |
+| `/semantic-search-clear` | Wipe all indexed data |
+| `/semantic-search-pause` | Pause file watcher |
+| `/semantic-search-resume` | Resume file watcher |
 
 ## Requirements
 

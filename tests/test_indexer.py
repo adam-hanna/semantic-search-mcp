@@ -117,3 +117,37 @@ def test_indexer_full_index(indexer, temp_dir: Path):
     stats = indexer.index_directory(temp_dir)
 
     assert stats["files_indexed"] >= 3
+
+
+def test_index_directory_respects_cancel_flag(temp_dir: Path):
+    """Indexing should stop when cancel flag returns True."""
+    from semantic_search_mcp.config import Config
+    from semantic_search_mcp.database import Database
+    from semantic_search_mcp.embedder import Embedder
+
+    # Create test config with smaller model for faster tests
+    config = Config(
+        embedding_model="BAAI/bge-small-en-v1.5",
+        embedding_dim=384,
+    )
+
+    # Create multiple files
+    for i in range(10):
+        (temp_dir / f"file{i}.py").write_text(f"def func{i}(): pass")
+
+    db = Database(temp_dir / "test.db", embedding_dim=384)
+    embedder = Embedder(model_name=config.embedding_model, embedding_dim=config.embedding_dim)
+    indexer = FileIndexer(db, embedder, temp_dir)
+
+    # Cancel after 3 files
+    call_count = 0
+
+    def cancel_after_3():
+        nonlocal call_count
+        call_count += 1
+        return call_count > 3
+
+    stats = indexer.index_directory(cancel_flag=cancel_after_3)
+
+    assert stats.get("cancelled") is True
+    assert stats["files_indexed"] + stats["files_skipped"] + stats["files_error"] <= 3

@@ -42,7 +42,7 @@ This server enables natural language code search across codebases. It combines v
 
 | Module | Purpose |
 |--------|---------|
-| `server.py` | MCP server with tools: `search_code`, `initialize`, `reindex_file` |
+| `server.py` | MCP server with tools: `search_code`, `get_status`, `pause_watcher`, `resume_watcher`, `reindex`, `cancel_indexing`, `clear_index`, `exclude_paths`, `include_paths` |
 | `config.py` | Configuration from env vars with `SEMANTIC_SEARCH_*` prefix |
 | `database.py` | SQLite with sqlite-vec (vectors) and FTS5 (keywords) via APSW |
 | `embedder.py` | FastEmbed wrapper with INT8 quantization and GPU auto-detection |
@@ -264,11 +264,33 @@ search_code(
 )
 ```
 
-### initialize
-Force reindex with `force_reindex=True`. Normally not needed due to auto-init.
+### get_status
+Returns comprehensive server state including watcher status, indexing progress, and statistics.
 
-### reindex_file
-Manually reindex a specific file path.
+### pause_watcher / resume_watcher
+Control the file watcher. Events during pause are discarded.
+
+### reindex
+Start a full reindex in the background. Use `get_status` to monitor progress.
+```python
+reindex(
+    force: bool = True,       # Reindex even unchanged files
+    clear_first: bool = False # Wipe index before starting
+)
+```
+
+### cancel_indexing
+Cancel any running indexing job. Partial results are kept.
+
+### clear_index
+Wipe all indexed data from the database.
+
+### exclude_paths / include_paths
+Manage runtime path exclusions (session-only, reset on restart).
+```python
+exclude_paths(patterns: ["node_modules", "*.test.py"])
+include_paths(patterns: ["node_modules"])  # Remove from exclusions
+```
 
 ## File Structure
 

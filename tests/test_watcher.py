@@ -138,3 +138,43 @@ async def test_watcher_batch_processing(mock_indexer, temp_dir):
     batch = await watcher._get_pending_batch()
     assert len(batch) == 3
     assert len(watcher._pending) == 0
+
+
+@pytest.mark.asyncio
+async def test_pause_clears_pending_and_discards_events(temp_dir, mock_indexer):
+    """Pausing should clear pending events and discard new ones."""
+    watcher = FileWatcher(mock_indexer, temp_dir)
+
+    # Add some events
+    event1 = ChangeEvent(type="added", path=temp_dir / "file1.py")
+    event2 = ChangeEvent(type="modified", path=temp_dir / "file2.py")
+    await watcher._add_event(event1)
+    await watcher._add_event(event2)
+
+    # Pause should clear pending and return count
+    discarded = await watcher.pause()
+    assert discarded == 2
+    assert watcher.is_paused
+    assert len(watcher._pending) == 0
+
+    # New events should be discarded when paused
+    event3 = ChangeEvent(type="added", path=temp_dir / "file3.py")
+    await watcher._add_event(event3)
+    assert len(watcher._pending) == 0
+
+
+@pytest.mark.asyncio
+async def test_resume_allows_events(temp_dir, mock_indexer):
+    """Resuming should allow events to be queued again."""
+    watcher = FileWatcher(mock_indexer, temp_dir)
+
+    await watcher.pause()
+    assert watcher.is_paused
+
+    await watcher.resume()
+    assert not watcher.is_paused
+
+    # Events should now be accepted
+    event = ChangeEvent(type="added", path=temp_dir / "file1.py")
+    await watcher._add_event(event)
+    assert len(watcher._pending) == 1

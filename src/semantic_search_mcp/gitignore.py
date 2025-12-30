@@ -1,8 +1,12 @@
 """Gitignore-aware file filtering using pathspec."""
+import fnmatch
+import logging
 from pathlib import Path
 from typing import Optional
 
 import pathspec
+
+logger = logging.getLogger(__name__)
 
 
 # Always ignore these directories regardless of .gitignore
@@ -74,6 +78,7 @@ class GitignoreFilter:
         """
         self.root = Path(root_dir).resolve()
         self.specs: dict[Path, pathspec.GitIgnoreSpec] = {}
+        self._runtime_exclusions: set[str] = set()
         self._load_all_gitignores()
 
     def _load_all_gitignores(self):
@@ -94,7 +99,6 @@ class GitignoreFilter:
             # Handle patterns like *.egg-info
             for pattern in ALWAYS_IGNORE_DIRS:
                 if "*" in pattern:
-                    import fnmatch
                     if fnmatch.fnmatch(part, pattern):
                         return True
         return False
@@ -116,6 +120,70 @@ class GitignoreFilter:
                 continue
         return False
 
+    def _matches_runtime_exclusion(self, path: Path) -> bool:
+        """Check if path matches any runtime exclusion pattern.
+
+        Args:
+            path: Absolute path to check
+
+        Returns:
+            True if path matches a runtime exclusion pattern
+        """
+        if not self._runtime_exclusions:
+            return False
+
+        try:
+            rel_path = path.relative_to(self.root)
+        except ValueError:
+            return False
+
+        rel_path_str = str(rel_path)
+
+        for pattern in self._runtime_exclusions:
+            # Create a pathspec for the pattern
+            spec = pathspec.GitIgnoreSpec.from_lines([pattern])
+            if spec.match_file(rel_path_str):
+                return True
+
+            # Also check if any path component matches a simple pattern
+            # (for patterns like "src" that should match directory names)
+            for part in rel_path.parts:
+                if fnmatch.fnmatch(part, pattern):
+                    return True
+
+        return False
+
+    def add_exclusions(self, patterns: list[str]) -> None:
+        """Add runtime exclusion patterns.
+
+        Args:
+            patterns: List of glob patterns to exclude
+        """
+        self._runtime_exclusions.update(patterns)
+        logger.info(f"Added exclusions: {patterns}")
+
+    def remove_exclusions(self, patterns: list[str]) -> None:
+        """Remove runtime exclusion patterns.
+
+        Args:
+            patterns: List of patterns to remove
+        """
+        self._runtime_exclusions.difference_update(patterns)
+        logger.info(f"Removed exclusions: {patterns}")
+
+    def get_exclusions(self) -> list[str]:
+        """Get current runtime exclusion patterns.
+
+        Returns:
+            List of exclusion patterns
+        """
+        return list(self._runtime_exclusions)
+
+    def clear_exclusions(self) -> None:
+        """Clear all runtime exclusion patterns."""
+        self._runtime_exclusions.clear()
+        logger.info("Cleared all runtime exclusions")
+
     def should_index(self, filepath: Path) -> bool:
         """Determine if a file should be indexed.
 
@@ -133,6 +201,10 @@ class GitignoreFilter:
 
         # Must have code extension
         if not self._is_code_file(path):
+            return False
+
+        # Check runtime exclusions first (takes precedence)
+        if self._matches_runtime_exclusion(path):
             return False
 
         # Check always-ignored directories
