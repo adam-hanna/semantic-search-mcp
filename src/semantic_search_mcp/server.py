@@ -62,14 +62,26 @@ class IndexStats(BaseModel):
 
 
 class ServerState:
-    """Tracks server initialization state."""
+    """Tracks server initialization and runtime state."""
     def __init__(self):
+        # Initialization state
         self.status = "pending"  # pending, initializing, ready, error
         self.error: Optional[str] = None
         self.files_indexed = 0
         self.total_chunks = 0
         self.model = ""
         self.init_time_ms = 0.0
+
+        # Watcher state
+        self.watcher_status = "stopped"  # running, paused, stopped
+
+        # Indexing state
+        self.indexing_in_progress = False
+        self.indexing_cancelled = False
+        self.indexing_progress = {"current": 0, "total": 0, "current_file": ""}
+
+        # Last indexed timestamp
+        self.last_indexed_at: Optional[str] = None
 
 
 def create_server(
