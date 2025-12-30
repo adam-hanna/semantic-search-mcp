@@ -144,6 +144,79 @@ class CodeChunker:
             return "class"
         return "block"
 
+    def _estimate_tokens(self, text: str) -> int:
+        """Estimate token count (rough: ~4 chars per token for code)."""
+        return len(text) // 4
+
+    def _split_large_chunk(
+        self, content: str, chunk_type: str, name: Optional[str],
+        start_line: int, end_line: int, language: str
+    ) -> list[Chunk]:
+        """Split a chunk that exceeds max_tokens into smaller pieces.
+
+        Splits at blank lines or line boundaries to maintain readability.
+        """
+        max_chars = self.max_tokens * 4  # Approximate chars for token limit
+
+        if len(content) <= max_chars:
+            return [Chunk(
+                content=content,
+                chunk_type=chunk_type,
+                name=name,
+                start_line=start_line,
+                end_line=end_line,
+                language=language,
+            )]
+
+        chunks = []
+        lines = content.split("\n")
+        current_chunk_lines = []
+        current_chars = 0
+        chunk_start_line = start_line
+        part_num = 1
+
+        for i, line in enumerate(lines):
+            line_chars = len(line) + 1  # +1 for newline
+
+            # If adding this line would exceed limit, finalize current chunk
+            if current_chars + line_chars > max_chars and current_chunk_lines:
+                chunk_content = "\n".join(current_chunk_lines)
+                chunk_name = f"{name}_part{part_num}" if name else f"part{part_num}"
+                chunks.append(Chunk(
+                    content=chunk_content,
+                    chunk_type=chunk_type,
+                    name=chunk_name,
+                    start_line=chunk_start_line,
+                    end_line=chunk_start_line + len(current_chunk_lines) - 1,
+                    language=language,
+                ))
+                part_num += 1
+
+                # Start new chunk with overlap
+                overlap_lines = max(1, self.overlap_tokens // 10)
+                overlap_start = max(0, len(current_chunk_lines) - overlap_lines)
+                current_chunk_lines = current_chunk_lines[overlap_start:]
+                current_chars = sum(len(l) + 1 for l in current_chunk_lines)
+                chunk_start_line = start_line + i - len(current_chunk_lines)
+
+            current_chunk_lines.append(line)
+            current_chars += line_chars
+
+        # Add final chunk
+        if current_chunk_lines:
+            chunk_content = "\n".join(current_chunk_lines)
+            chunk_name = f"{name}_part{part_num}" if name and part_num > 1 else name
+            chunks.append(Chunk(
+                content=chunk_content,
+                chunk_type=chunk_type,
+                name=chunk_name,
+                start_line=chunk_start_line,
+                end_line=end_line,
+                language=language,
+            ))
+
+        return chunks
+
     def _add_overlap(self, content: str, lines: list[str], start_line: int, end_line: int) -> tuple[str, int, int]:
         """Add overlap context before the chunk."""
         # Approximate tokens as words (rough estimate)
@@ -216,13 +289,10 @@ class CodeChunker:
                 name = self._get_node_name(node, source_bytes, language)
                 chunk_type = self._node_to_chunk_type(node.type)
 
-                chunks.append(Chunk(
-                    content=chunk_content,
-                    chunk_type=chunk_type,
-                    name=name,
-                    start_line=start_line,
-                    end_line=end_line,
-                    language=language,
+                # Split large chunks to enforce max_tokens
+                chunks.extend(self._split_large_chunk(
+                    chunk_content, chunk_type, name,
+                    start_line, end_line, language
                 ))
 
             # Visit children

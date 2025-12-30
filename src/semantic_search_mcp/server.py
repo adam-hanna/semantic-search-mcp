@@ -95,6 +95,8 @@ def create_server(
         model_name=config.embedding_model,
         embedding_dim=config.embedding_dim,
         batch_size=config.embedding_batch_size,
+        threads=config.embedding_threads,
+        use_quantized=config.use_quantized,
     )
     indexer = FileIndexer(
         db, embedder, root_dir,
