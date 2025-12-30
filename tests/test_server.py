@@ -226,3 +226,62 @@ async def test_resume_watcher_when_not_paused(mock_components):
     result = await resume_tool.fn()
     assert result["status"] == "error"
     assert result["reason"] == "Watcher not initialized"
+
+
+def test_server_has_cancel_indexing_tool(mock_components):
+    """Server should have a cancel_indexing tool."""
+    mcp = create_server(mock_components["temp_dir"])
+
+    tool_names = [t.name for t in mcp._tool_manager._tools.values()]
+    assert "cancel_indexing" in tool_names
+
+
+@pytest.mark.asyncio
+async def test_cancel_indexing_when_not_running(mock_components):
+    """cancel_indexing when not indexing should return not_running."""
+    mcp = create_server(mock_components["temp_dir"])
+
+    # Get the tool
+    tools = {t.name: t for t in mcp._tool_manager._tools.values()}
+    assert "cancel_indexing" in tools
+
+    # Call the tool - indexing_in_progress defaults to False
+    cancel_tool = tools["cancel_indexing"]
+    result = await cancel_tool.fn()
+
+    assert result["status"] == "not_running"
+
+
+@pytest.mark.asyncio
+async def test_cancel_indexing_sets_flag(mock_components):
+    """cancel_indexing should set the cancelled flag."""
+    mcp = create_server(mock_components["temp_dir"])
+
+    # Get the tool
+    tools = {t.name: t for t in mcp._tool_manager._tools.values()}
+    cancel_tool = tools["cancel_indexing"]
+
+    # We need to access the state object to set indexing_in_progress = True
+    # The state is created inside create_server, so we need to access it via closure
+    # We can do this by examining the tool's __globals__ or by using a different approach
+
+    # Access the closure variables from the tool function
+    # The tool.fn is the actual async function with access to `state`
+    func = cancel_tool.fn
+    # Get the closure that contains 'state'
+    closure_vars = {
+        name: cell.cell_contents
+        for name, cell in zip(func.__code__.co_freevars, func.__closure__)
+    }
+
+    # Set indexing_in_progress to True via the state object
+    state = closure_vars["state"]
+    state.indexing_in_progress = True
+    state.indexing_progress = {"current": 5, "total": 10, "current_file": "test.py"}
+
+    # Now call cancel_indexing
+    result = await cancel_tool.fn()
+
+    assert result["status"] == "cancelling"
+    assert result["progress"] == {"current": 5, "total": 10, "current_file": "test.py"}
+    assert state.indexing_cancelled is True

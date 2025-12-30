@@ -512,6 +512,24 @@ def create_server(
 
         return {"status": "running"}
 
+    @mcp.tool()
+    async def cancel_indexing() -> dict:
+        """
+        Cancel any running indexing job.
+
+        The indexing will stop after the current file completes.
+        Partial results are kept in the index.
+        """
+        if not state.indexing_in_progress:
+            return {"status": "not_running"}
+
+        state.indexing_cancelled = True
+
+        return {
+            "status": "cancelling",
+            "progress": state.indexing_progress.copy(),
+        }
+
     @mcp.resource("search://status")
     def get_status() -> str:
         """Current index status and statistics."""
