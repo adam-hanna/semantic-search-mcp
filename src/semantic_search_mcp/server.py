@@ -600,6 +600,28 @@ def create_server(
             "excluded_patterns": current,
         }
 
+    @mcp.tool()
+    async def include_paths(
+        patterns: list[str] = Field(
+            description="Glob patterns to remove from exclusion list"
+        ),
+    ) -> dict:
+        """
+        Remove paths from the exclusion list.
+
+        Reverses the effect of exclude_paths for the specified patterns.
+        """
+        if components.indexer is None:
+            return {"status": "error", "reason": "Indexer not initialized"}
+
+        components.indexer.gitignore.remove_exclusions(patterns)
+        current = components.indexer.gitignore.get_exclusions()
+
+        return {
+            "status": "updated",
+            "excluded_patterns": current,
+        }
+
     @mcp.resource("search://status")
     def get_status() -> str:
         """Current index status and statistics."""
