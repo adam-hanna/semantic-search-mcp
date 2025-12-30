@@ -164,6 +164,7 @@ def create_server(
                 )
                 state.files_indexed = stats["files_indexed"]
                 state.total_chunks = stats["total_chunks"]
+                state.last_indexed_at = datetime.now(timezone.utc).isoformat()
             else:
                 logger.info(
                     f"Found existing index ({existing_stats['files']} files, "
@@ -180,6 +181,7 @@ def create_server(
                 debounce_ms=config.debounce_ms,
             )
             asyncio.create_task(components.watcher.start())
+            state.watcher_status = "running"
 
             elapsed = (time.time() - start_time) * 1000
             state.status = "ready"
@@ -230,6 +232,13 @@ def create_server(
 
         The search combines semantic similarity with keyword matching for best results.
         If the server is still initializing, search will wait briefly or return a status message.
+
+        **When to use semantic search vs Grep:**
+        - Use semantic search: finding functions/classes by purpose ("authentication handler", "database connection")
+        - Use Grep: exact patterns, variable assignments, finding all occurrences of a specific identifier
+
+        **Note:** Results are chunked at the function/class level. To find specific lines within
+        large functions, use semantic search to locate the file, then Grep for the exact pattern.
         """,
         lifespan=lifespan,
     )
@@ -368,6 +377,10 @@ def create_server(
 
         Returns ranked code snippets with file locations and relevance scores.
         Combines vector similarity with keyword search for best results.
+
+        **Best for:** Finding functions/classes by purpose or behavior.
+        **Not for:** Exact pattern matching or finding all occurrences of a variable.
+        Use Grep for exact patterns; use semantic search to find relevant files first.
         """
         start_time = time.time()
 
