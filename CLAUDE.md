@@ -158,6 +158,39 @@ rm -rf .semantic-search/  # Must reindex with new model
 ```
 Dimension is auto-detected. **Note:** Switching models requires a full reindex.
 
+### UniXcoder (Experimental, Code-Specific)
+
+[Microsoft UniXcoder](https://github.com/microsoft/CodeBERT/tree/master/UniXcoder) is pre-trained on code + AST + comments for deeper code understanding. It may provide better semantic matching but is **~20x slower** than Jina.
+
+| Model | Dims | Speed | Languages |
+|-------|------|-------|-----------|
+| `microsoft/unixcoder-base` | 768 | ~20x slower | java, ruby, python, php, js, go |
+| `microsoft/unixcoder-base-nine` | 768 | ~20x slower | + c, c++, c# |
+
+**Installation:**
+```bash
+pip install semantic-search-mcp[unixcoder]  # Adds torch + transformers (~2GB)
+```
+
+**Usage:**
+```bash
+export SEMANTIC_SEARCH_EMBEDDING_MODEL=microsoft/unixcoder-base-nine
+```
+
+**Architecture:** Uses `transformers` library with PyTorch backend. Supports GPU acceleration:
+- NVIDIA: CUDA (auto-detected)
+- Apple Silicon: MPS (auto-detected)
+- CPU: Fallback (slow)
+
+**Benchmarks (CPU):**
+| Model | ms/embedding | 1000 chunks |
+|-------|--------------|-------------|
+| Jina Code | 47ms | ~47 seconds |
+| UniXcoder | 919ms | ~15 minutes |
+
+**When to use:** Small codebases, quality-focused, GPU available.
+**When to avoid:** Large codebases, fast indexing needed, CPU-only.
+
 ## Performance
 
 ### Optimizations Applied

@@ -136,6 +136,35 @@ export SEMANTIC_SEARCH_EMBEDDING_MODEL="sentence-transformers/all-MiniLM-L6-v2"
 
 Note: Changing models requires a full reindex (delete `.semantic-search/` directory).
 
+### UniXcoder (Experimental)
+
+[Microsoft UniXcoder](https://github.com/microsoft/CodeBERT/tree/master/UniXcoder) is a code-specific model pre-trained on code + AST + comments. It may provide better semantic understanding of code structure, but is **substantially slower** (~20x slower than Jina).
+
+| Model | Dimensions | Speed | Languages |
+|-------|------------|-------|-----------|
+| `microsoft/unixcoder-base` | 768 | ~20x slower | 6 (java, ruby, python, php, js, go) |
+| `microsoft/unixcoder-base-nine` | 768 | ~20x slower | 9 (+ c, c++, c#) |
+
+**Installation** (requires additional dependencies):
+```bash
+pip install semantic-search-mcp[unixcoder]
+```
+
+**Usage:**
+```bash
+export SEMANTIC_SEARCH_EMBEDDING_MODEL="microsoft/unixcoder-base-nine"
+```
+
+**When to use UniXcoder:**
+- You prioritize search quality over indexing speed
+- Your codebase is small to medium sized
+- You have GPU acceleration (CUDA or Apple Silicon MPS)
+
+**When to avoid UniXcoder:**
+- Large codebases (10,000+ files) - indexing will take hours
+- You need fast initial indexing
+- Running on CPU without GPU acceleration
+
 ## Requirements
 
 - Python 3.11+
