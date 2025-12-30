@@ -61,6 +61,7 @@ class FileWatcher:
         self.queue_max_size = queue_max_size
         self.debounce_ms = debounce_ms
         self._running = False
+        self._paused = False
         self._watch_task: Optional[asyncio.Task] = None
         self._process_task: Optional[asyncio.Task] = None
 
@@ -74,12 +75,21 @@ class FileWatcher:
         self._last_event_time: float = 0.0
         self._in_burst_mode: bool = False
 
+    @property
+    def is_paused(self) -> bool:
+        """Return whether the watcher is paused."""
+        return self._paused
+
     async def _add_event(self, event: ChangeEvent) -> None:
         """Add event to pending dict with deduplication.
 
         Args:
             event: Change event to add
         """
+        # Discard events when paused
+        if self._paused:
+            return
+
         # Filter non-indexable files
         if not self.indexer.gitignore.should_index(event.path):
             return
@@ -147,6 +157,11 @@ class FileWatcher:
         """Process events from the pending dict."""
         while self._running:
             try:
+                # Skip processing when paused
+                if self._paused:
+                    await asyncio.sleep(0.5)
+                    continue
+
                 # Check if we should wait for burst to settle
                 now = time.time()
                 time_since_last = now - self._last_event_time if self._last_event_time > 0 else float('inf')
@@ -238,6 +253,24 @@ class FileWatcher:
                 pass
 
         logger.info("Stopped watching")
+
+    async def pause(self) -> int:
+        """Pause watching and discard pending events.
+
+        Returns:
+            Number of events discarded
+        """
+        async with self._pending_lock:
+            discarded = len(self._pending)
+            self._pending.clear()
+            self._paused = True
+            logger.info(f"Watcher paused, {discarded} events discarded")
+            return discarded
+
+    async def resume(self) -> None:
+        """Resume watching for file changes."""
+        self._paused = False
+        logger.info("Watcher resumed")
 
     # Legacy method for backwards compatibility with tests
     def queue_event(self, event: ChangeEvent) -> None:
