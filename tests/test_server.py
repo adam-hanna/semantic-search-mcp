@@ -685,3 +685,158 @@ async def test_get_status_with_error(mock_components):
     # Verify error is reflected
     assert result["server_status"] == "error"
     assert result["error"] == "Failed to load embedding model"
+
+
+def test_server_has_reindex_full_tool(mock_components):
+    """Server should have a reindex tool."""
+    mcp = create_server(mock_components["temp_dir"])
+
+    tool_names = [t.name for t in mcp._tool_manager._tools.values()]
+    assert "reindex" in tool_names
+
+
+@pytest.mark.asyncio
+async def test_reindex_tool_runs_in_background(mock_components):
+    """reindex should start indexing in background and return immediately."""
+    mcp = create_server(mock_components["temp_dir"])
+
+    # Get the tool
+    tools = {t.name: t for t in mcp._tool_manager._tools.values()}
+    reindex_tool = tools["reindex"]
+
+    # Access the closure variables from the tool function
+    func = reindex_tool.fn
+    closure_vars = {
+        name: cell.cell_contents
+        for name, cell in zip(func.__code__.co_freevars, func.__closure__)
+    }
+
+    # Set up mock components and state
+    components = closure_vars["components"]
+    state = closure_vars["state"]
+
+    # Create a mock database
+    mock_db = MagicMock()
+    mock_db.get_stats.return_value = {"files": 10, "chunks": 50}
+    mock_db.conn = MagicMock()
+    components.db = mock_db
+
+    # Create a mock indexer with mock gitignore
+    mock_indexer = MagicMock()
+    mock_gitignore = MagicMock()
+    mock_gitignore.should_index.return_value = True
+    mock_indexer.gitignore = mock_gitignore
+    mock_indexer.index_directory.return_value = {"files_indexed": 5, "total_chunks": 25}
+    components.indexer = mock_indexer
+
+    # Set state to ready
+    state.status = "ready"
+    state.indexing_in_progress = False
+
+    # Call reindex with explicit arguments (Field defaults aren't resolved when calling fn directly)
+    result = await reindex_tool.fn(force=True, clear_first=False)
+
+    # Verify it returns immediately with started status
+    assert result["status"] == "started"
+    assert "files_found" in result
+    assert result["force"] is True
+    assert result["clear_first"] is False
+
+
+@pytest.mark.asyncio
+async def test_reindex_fails_when_already_indexing(mock_components):
+    """reindex should fail if indexing is already in progress."""
+    mcp = create_server(mock_components["temp_dir"])
+
+    # Get the tool
+    tools = {t.name: t for t in mcp._tool_manager._tools.values()}
+    reindex_tool = tools["reindex"]
+
+    # Access the closure variables from the tool function
+    func = reindex_tool.fn
+    closure_vars = {
+        name: cell.cell_contents
+        for name, cell in zip(func.__code__.co_freevars, func.__closure__)
+    }
+
+    # Set up mock components and state
+    components = closure_vars["components"]
+    state = closure_vars["state"]
+
+    # Create a mock database
+    mock_db = MagicMock()
+    mock_db.conn = MagicMock()
+    components.db = mock_db
+
+    # Create a mock indexer
+    mock_indexer = MagicMock()
+    components.indexer = mock_indexer
+
+    # Set state to ready but indexing already in progress
+    state.status = "ready"
+    state.indexing_in_progress = True
+
+    # Call reindex
+    result = await reindex_tool.fn()
+
+    # Verify it returns error
+    assert result["status"] == "error"
+    assert result["reason"] == "Indexing already in progress"
+
+
+@pytest.mark.asyncio
+async def test_reindex_fails_when_server_not_ready(mock_components):
+    """reindex should fail if server is not ready."""
+    mcp = create_server(mock_components["temp_dir"])
+
+    # Get the tool
+    tools = {t.name: t for t in mcp._tool_manager._tools.values()}
+    reindex_tool = tools["reindex"]
+
+    # Access the closure variables from the tool function
+    func = reindex_tool.fn
+    closure_vars = {
+        name: cell.cell_contents
+        for name, cell in zip(func.__code__.co_freevars, func.__closure__)
+    }
+
+    # Set up state - server still initializing
+    state = closure_vars["state"]
+    state.status = "initializing"
+    state.indexing_in_progress = False
+
+    # Call reindex
+    result = await reindex_tool.fn()
+
+    # Verify it returns error
+    assert result["status"] == "error"
+    assert result["reason"] == "Server not ready"
+
+
+@pytest.mark.asyncio
+async def test_reindex_fails_when_components_not_initialized(mock_components):
+    """reindex should fail if components are not initialized."""
+    mcp = create_server(mock_components["temp_dir"])
+
+    # Get the tool
+    tools = {t.name: t for t in mcp._tool_manager._tools.values()}
+    reindex_tool = tools["reindex"]
+
+    # Access the closure variables from the tool function
+    func = reindex_tool.fn
+    closure_vars = {
+        name: cell.cell_contents
+        for name, cell in zip(func.__code__.co_freevars, func.__closure__)
+    }
+
+    # Set up state - server ready but no components
+    state = closure_vars["state"]
+    state.status = "ready"
+    state.indexing_in_progress = False
+
+    # Call reindex (components.db and components.indexer are None by default)
+    result = await reindex_tool.fn()
+
+    # Verify it returns error
+    assert result["status"] == "error"
+    assert result["reason"] == "Components not initialized"

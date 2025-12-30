@@ -6,6 +6,7 @@ import logging
 import os
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -661,6 +662,101 @@ def create_server(
             "excluded_patterns": excluded,
             "model": state.model,
             "error": state.error,
+        }
+
+    @mcp.tool()
+    async def reindex(
+        force: bool = Field(
+            default=True,
+            description="Force reindex even if files haven't changed"
+        ),
+        clear_first: bool = Field(
+            default=False,
+            description="Clear all existing index data before reindexing"
+        ),
+    ) -> dict:
+        """
+        Start a full reindex of the codebase.
+
+        Runs in the background - use get_status to monitor progress.
+        Use cancel_indexing to abort if needed.
+        """
+        if state.status not in ("ready", "error"):
+            return {"status": "error", "reason": "Server not ready"}
+
+        if state.indexing_in_progress:
+            return {"status": "error", "reason": "Indexing already in progress"}
+
+        if components.db is None or components.indexer is None:
+            return {"status": "error", "reason": "Components not initialized"}
+
+        # Clear if requested
+        if clear_first:
+            components.db.conn.execute("DELETE FROM vec_chunks")
+            components.db.conn.execute("DELETE FROM chunks")
+            components.db.conn.execute("DELETE FROM files")
+            components.db.conn.commit()
+
+        # Count files to index
+        files = [f for f in root_dir.rglob("*") if components.indexer.gitignore.should_index(f)]
+        files_found = len(files)
+
+        # Reset cancellation flag
+        state.indexing_cancelled = False
+        state.indexing_in_progress = True
+        state.indexing_progress = {"current": 0, "total": files_found, "current_file": ""}
+
+        async def run_indexing():
+            try:
+                def progress_callback(current, total, message):
+                    state.indexing_progress = {
+                        "current": current,
+                        "total": total,
+                        "current_file": message.replace("Indexing ", ""),
+                    }
+
+                def cancel_flag():
+                    return state.indexing_cancelled
+
+                if force:
+                    # Clear for force reindex
+                    components.db.conn.execute("DELETE FROM vec_chunks")
+                    components.db.conn.execute("DELETE FROM chunks")
+                    components.db.conn.execute("DELETE FROM files")
+                    components.db.conn.commit()
+
+                stats = await asyncio.to_thread(
+                    components.indexer.index_directory,
+                    root_dir,
+                    progress_callback,
+                    config.index_batch_size,
+                    cancel_flag,
+                )
+
+                state.files_indexed = stats["files_indexed"]
+                state.total_chunks = stats["total_chunks"]
+                state.last_indexed_at = datetime.now(timezone.utc).isoformat()
+
+                if stats.get("cancelled"):
+                    logger.info("Reindex cancelled")
+                else:
+                    logger.info(f"Reindex complete: {stats['files_indexed']} files, {stats['total_chunks']} chunks")
+
+            except Exception as e:
+                logger.error(f"Reindex failed: {e}")
+                state.error = str(e)
+            finally:
+                state.indexing_in_progress = False
+                state.indexing_cancelled = False
+
+        # Start in background
+        asyncio.create_task(run_indexing())
+
+        return {
+            "status": "started",
+            "files_found": files_found,
+            "clear_first": clear_first,
+            "force": force,
         }
 
     @mcp.resource("search://status")
