@@ -573,6 +573,33 @@ def create_server(
             "chunks_removed": chunks_removed,
         }
 
+    @mcp.tool()
+    async def exclude_paths(
+        patterns: list[str] = Field(
+            description="Glob patterns to exclude, e.g. ['node_modules', '*.test.py']"
+        ),
+    ) -> dict:
+        """
+        Add paths to exclude from indexing (session-only).
+
+        Patterns use glob syntax. Examples:
+        - "node_modules" - exclude any path containing node_modules
+        - "*.test.py" - exclude files ending in .test.py
+        - "vendor/**" - exclude everything under vendor/
+
+        Exclusions reset when the server restarts.
+        """
+        if components.indexer is None:
+            return {"status": "error", "reason": "Indexer not initialized"}
+
+        components.indexer.gitignore.add_exclusions(patterns)
+        current = components.indexer.gitignore.get_exclusions()
+
+        return {
+            "status": "updated",
+            "excluded_patterns": current,
+        }
+
     @mcp.resource("search://status")
     def get_status() -> str:
         """Current index status and statistics."""

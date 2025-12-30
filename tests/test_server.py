@@ -400,3 +400,65 @@ async def test_clear_index_cancels_running_indexing(mock_components):
     assert result["status"] == "cleared"
     assert result["files_removed"] == 5
     assert result["chunks_removed"] == 25
+
+
+def test_server_has_exclude_paths_tool(mock_components):
+    """Server should have an exclude_paths tool."""
+    mcp = create_server(mock_components["temp_dir"])
+
+    tool_names = [t.name for t in mcp._tool_manager._tools.values()]
+    assert "exclude_paths" in tool_names
+
+
+@pytest.mark.asyncio
+async def test_exclude_paths_returns_error_when_indexer_not_initialized(mock_components):
+    """exclude_paths should return error when indexer is not initialized."""
+    mcp = create_server(mock_components["temp_dir"])
+
+    # Get the tool
+    tools = {t.name: t for t in mcp._tool_manager._tools.values()}
+    exclude_tool = tools["exclude_paths"]
+
+    # Without lifespan, indexer is None
+    result = await exclude_tool.fn(patterns=["*.test.py"])
+
+    assert result["status"] == "error"
+    assert result["reason"] == "Indexer not initialized"
+
+
+@pytest.mark.asyncio
+async def test_exclude_paths_adds_patterns_to_gitignore(mock_components):
+    """exclude_paths should add patterns to gitignore filter."""
+    mcp = create_server(mock_components["temp_dir"])
+
+    # Get the tool
+    tools = {t.name: t for t in mcp._tool_manager._tools.values()}
+    exclude_tool = tools["exclude_paths"]
+
+    # Access the closure variables from the tool function
+    func = exclude_tool.fn
+    closure_vars = {
+        name: cell.cell_contents
+        for name, cell in zip(func.__code__.co_freevars, func.__closure__)
+    }
+
+    # Set up mock components
+    components = closure_vars["components"]
+
+    # Create a mock indexer with mock gitignore
+    mock_indexer = MagicMock()
+    mock_gitignore = MagicMock()
+    mock_gitignore.get_exclusions.return_value = ["node_modules", "*.test.py"]
+    mock_indexer.gitignore = mock_gitignore
+    components.indexer = mock_indexer
+
+    # Call exclude_paths
+    result = await exclude_tool.fn(patterns=["node_modules", "*.test.py"])
+
+    # Verify result
+    assert result["status"] == "updated"
+    assert result["excluded_patterns"] == ["node_modules", "*.test.py"]
+
+    # Verify gitignore.add_exclusions was called with the patterns
+    mock_gitignore.add_exclusions.assert_called_once_with(["node_modules", "*.test.py"])
+    mock_gitignore.get_exclusions.assert_called_once()
