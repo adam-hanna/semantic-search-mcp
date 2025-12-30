@@ -188,6 +188,7 @@ def create_server(
         # Server accepts MCP connections immediately while this runs
         init_task = asyncio.create_task(background_init())
 
+        logger.info("Server ready to accept connections (init running in background)")
         yield  # Server starts accepting connections immediately
 
         # Cleanup on shutdown
