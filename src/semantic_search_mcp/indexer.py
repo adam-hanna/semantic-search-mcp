@@ -184,6 +184,7 @@ class FileIndexer:
         directory: Optional[Path] = None,
         progress_callback: Optional[Callable[[int, int, str], None]] = None,
         batch_size: int = DEFAULT_BATCH_SIZE,
+        cancel_flag: Optional[Callable[[], bool]] = None,
     ) -> dict:
         """Index all files in a directory with memory-efficient batching.
 
@@ -191,6 +192,7 @@ class FileIndexer:
             directory: Directory to index (defaults to root_dir)
             progress_callback: Callback(current, total, message)
             batch_size: Number of files to process before garbage collection
+            cancel_flag: Callable that returns True when indexing should stop
 
         Returns:
             Stats dict with files_indexed, files_skipped, etc.
@@ -206,11 +208,18 @@ class FileIndexer:
             "files_skipped": 0,
             "files_error": 0,
             "total_chunks": 0,
+            "cancelled": False,
         }
 
         logger.info(f"Found {total} files to index (batch size: {batch_size})")
 
         for i, filepath in enumerate(files):
+            # Check for cancellation before processing each file
+            if cancel_flag and cancel_flag():
+                stats["cancelled"] = True
+                logger.info(f"Indexing cancelled at {i}/{total} files")
+                break
+
             if progress_callback:
                 progress_callback(i, total, f"Indexing {filepath.name}")
 
@@ -235,14 +244,21 @@ class FileIndexer:
         # Final garbage collection
         gc.collect()
 
-        if progress_callback:
+        if not stats["cancelled"] and progress_callback:
             progress_callback(total, total, "Complete")
 
-        logger.info(
-            f"Indexing complete: {stats['files_indexed']} indexed, "
-            f"{stats['files_skipped']} skipped, {stats['files_error']} errors, "
-            f"{stats['total_chunks']} chunks"
-        )
+        if stats["cancelled"]:
+            logger.info(
+                f"Indexing cancelled: {stats['files_indexed']} indexed, "
+                f"{stats['files_skipped']} skipped, {stats['files_error']} errors, "
+                f"{stats['total_chunks']} chunks"
+            )
+        else:
+            logger.info(
+                f"Indexing complete: {stats['files_indexed']} indexed, "
+                f"{stats['files_skipped']} skipped, {stats['files_error']} errors, "
+                f"{stats['total_chunks']} chunks"
+            )
 
         return stats
 
