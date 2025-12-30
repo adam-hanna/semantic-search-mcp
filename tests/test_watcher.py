@@ -21,10 +21,10 @@ def mock_indexer():
 
 
 def test_watcher_creates_bounded_queue(mock_indexer, temp_dir):
-    """Watcher should create a bounded queue."""
+    """Watcher should respect max queue size setting."""
     watcher = FileWatcher(mock_indexer, temp_dir, queue_max_size=100)
 
-    assert watcher.queue.maxsize == 100
+    assert watcher.queue_max_size == 100
 
 
 def test_watcher_queue_event(mock_indexer, temp_dir):
@@ -34,9 +34,10 @@ def test_watcher_queue_event(mock_indexer, temp_dir):
     event = ChangeEvent(type="modified", path=temp_dir / "test.py")
     watcher.queue_event(event)
 
-    assert not watcher.queue.empty()
-    queued = watcher.queue.get_nowait()
-    assert queued.type == "modified"
+    assert len(watcher._pending) == 1
+    assert temp_dir / "test.py" in watcher._pending
+    event_type, _ = watcher._pending[temp_dir / "test.py"]
+    assert event_type == "modified"
 
 
 def test_watcher_filters_non_indexable(mock_indexer, temp_dir):
@@ -48,7 +49,7 @@ def test_watcher_filters_non_indexable(mock_indexer, temp_dir):
     watcher.queue_event(event)
 
     # Event should be filtered out
-    assert watcher.queue.empty()
+    assert len(watcher._pending) == 0
 
 
 @pytest.mark.asyncio
@@ -103,4 +104,37 @@ def test_watcher_queue_drops_on_full(mock_indexer, temp_dir):
     # This should drop the oldest
     watcher.queue_event(ChangeEvent(type="modified", path=temp_dir / "c.py"))
 
-    assert watcher.queue.qsize() == 2
+    assert len(watcher._pending) == 2
+    # c.py should be there, a.py should have been dropped
+    assert temp_dir / "c.py" in watcher._pending
+
+
+def test_watcher_deduplicates_events(mock_indexer, temp_dir):
+    """Watcher should deduplicate events for the same file."""
+    watcher = FileWatcher(mock_indexer, temp_dir, queue_max_size=100)
+
+    # Queue multiple events for the same file
+    watcher.queue_event(ChangeEvent(type="modified", path=temp_dir / "test.py"))
+    watcher.queue_event(ChangeEvent(type="modified", path=temp_dir / "test.py"))
+    watcher.queue_event(ChangeEvent(type="modified", path=temp_dir / "test.py"))
+
+    # Should only have one entry
+    assert len(watcher._pending) == 1
+
+
+@pytest.mark.asyncio
+async def test_watcher_batch_processing(mock_indexer, temp_dir):
+    """Watcher should process events in batches."""
+    watcher = FileWatcher(mock_indexer, temp_dir, queue_max_size=100)
+
+    # Add multiple events
+    await watcher._add_event(ChangeEvent(type="modified", path=temp_dir / "a.py"))
+    await watcher._add_event(ChangeEvent(type="modified", path=temp_dir / "b.py"))
+    await watcher._add_event(ChangeEvent(type="added", path=temp_dir / "c.py"))
+
+    assert len(watcher._pending) == 3
+
+    # Get batch should return all and clear pending
+    batch = await watcher._get_pending_batch()
+    assert len(batch) == 3
+    assert len(watcher._pending) == 0
