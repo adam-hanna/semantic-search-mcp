@@ -120,17 +120,32 @@ def create_server(
             state.status = "initializing"
             start_time = time.time()
 
-            # Load embedding model (run in thread to avoid blocking event loop)
-            logger.info("Loading embedding model...")
-            await asyncio.to_thread(lambda: embedder.model)
+            # Check if database already has indexed files
+            existing_stats = db.get_stats()
+            has_existing_index = existing_stats.get("files", 0) > 0
 
-            # Index codebase (run in thread to avoid blocking event loop)
-            logger.info(f"Indexing codebase at {root_dir}...")
-            stats = await asyncio.to_thread(
-                indexer.index_directory, root_dir, None, config.index_batch_size
-            )
+            if has_existing_index:
+                # Database already has indexed files - skip full scan
+                # The file watcher will handle incremental updates
+                logger.info(
+                    f"Found existing index ({existing_stats['files']} files, "
+                    f"{existing_stats['chunks']} chunks) - skipping full scan"
+                )
+                state.files_indexed = existing_stats["files"]
+                state.total_chunks = existing_stats["chunks"]
+            else:
+                # No existing index - load model and index codebase
+                logger.info("Loading embedding model...")
+                await asyncio.to_thread(lambda: embedder.model)
 
-            # Start file watcher
+                logger.info(f"Indexing codebase at {root_dir}...")
+                stats = await asyncio.to_thread(
+                    indexer.index_directory, root_dir, None, config.index_batch_size
+                )
+                state.files_indexed = stats["files_indexed"]
+                state.total_chunks = stats["total_chunks"]
+
+            # Start file watcher (always, for incremental updates)
             logger.info("Starting file watcher...")
             watcher = FileWatcher(
                 indexer, root_dir,
@@ -141,12 +156,13 @@ def create_server(
 
             elapsed = (time.time() - start_time) * 1000
             state.status = "ready"
-            state.files_indexed = stats["files_indexed"]
-            state.total_chunks = stats["total_chunks"]
             state.model = config.embedding_model
             state.init_time_ms = elapsed
 
-            logger.info(f"Ready in {elapsed:.0f}ms: {stats['files_indexed']} files, {stats['total_chunks']} chunks")
+            if has_existing_index:
+                logger.info(f"Ready in {elapsed:.0f}ms (using existing index)")
+            else:
+                logger.info(f"Ready in {elapsed:.0f}ms: {state.files_indexed} files, {state.total_chunks} chunks")
 
         except Exception as e:
             state.status = "error"
