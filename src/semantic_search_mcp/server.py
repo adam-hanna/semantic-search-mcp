@@ -19,6 +19,7 @@ from semantic_search_mcp.embedder import Embedder
 from semantic_search_mcp.indexer import FileIndexer
 from semantic_search_mcp.searcher import HybridSearcher
 from semantic_search_mcp.watcher import FileWatcher
+from semantic_search_mcp.cli import install_skills_silent
 
 
 logger = logging.getLogger(__name__)
@@ -196,6 +197,9 @@ def create_server(
     async def lifespan(app):
         """Start server immediately, initialize in background."""
         logger.info("Starting semantic code search server...")
+
+        # Auto-install Claude Code skills (silent, no-op if already installed)
+        install_skills_silent()
 
         # Start initialization in background (non-blocking)
         # Server accepts MCP connections immediately while this runs

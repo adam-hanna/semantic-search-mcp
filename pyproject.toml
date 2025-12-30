@@ -61,6 +61,7 @@ Issues = "https://github.com/adam-hanna/semantic-search-mcp/issues"
 
 [project.scripts]
 semantic-search-mcp = "semantic_search_mcp.server:main"
+semantic-search-mcp-install-skills = "semantic_search_mcp.cli:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -72,3 +73,6 @@ testpaths = ["tests"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/semantic_search_mcp"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/semantic_search_mcp/skills" = "semantic_search_mcp/skills"

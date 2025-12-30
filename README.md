@@ -188,6 +188,27 @@ export SEMANTIC_SEARCH_EMBEDDING_MODEL="microsoft/unixcoder-base-nine"
 - You need fast initial indexing
 - Running on CPU without GPU acceleration
 
+## Claude Code Skills
+
+Skills are **automatically installed** to `~/.claude/skills/` when the MCP server first starts. These let you invoke tools with `/` slash commands.
+
+To manually reinstall or update skills:
+```bash
+semantic-search-mcp-install-skills
+```
+
+### Available Commands
+
+| Command | Description |
+|---------|-------------|
+| `/semantic-search:search <query>` | Search codebase with natural language |
+| `/semantic-search:status` | Check server status and index stats |
+| `/semantic-search:reindex` | Trigger full codebase reindex |
+| `/semantic-search:cancel` | Cancel running indexing job |
+| `/semantic-search:clear` | Wipe all indexed data |
+| `/semantic-search:pause` | Pause file watcher |
+| `/semantic-search:resume` | Resume file watcher |
+
 ## Requirements
 
 - Python 3.11+
