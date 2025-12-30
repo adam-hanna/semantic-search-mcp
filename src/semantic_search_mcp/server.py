@@ -87,66 +87,92 @@ def create_server(
     """
     config = config or load_config()
     root_dir = Path(root_dir or os.getcwd()).resolve()
-
-    # Initialize components (lazy-loaded where possible)
     db_path = root_dir / config.db_path
-    db = Database(db_path, embedding_dim=config.embedding_dim)
-    embedder = Embedder(
-        model_name=config.embedding_model,
-        embedding_dim=config.embedding_dim,
-        batch_size=config.embedding_batch_size,
-        threads=config.embedding_threads,
-        use_quantized=config.use_quantized,
-    )
-    indexer = FileIndexer(
-        db, embedder, root_dir,
-        chunk_overlap=config.chunk_overlap_tokens,
-        max_chunk_tokens=config.max_chunk_tokens,
-        max_file_size_kb=config.max_file_size_kb,
-    )
-    searcher = HybridSearcher(db, embedder, rrf_k=config.rrf_k)
-    watcher: Optional[FileWatcher] = None
+
+    # Components are created lazily in background_init to avoid blocking
+    # These are wrapped in a container so tools can access them after init
+    class Components:
+        db: Optional[Database] = None
+        embedder: Optional[Embedder] = None
+        indexer: Optional[FileIndexer] = None
+        searcher: Optional[HybridSearcher] = None
+        watcher: Optional[FileWatcher] = None
+
+    components = Components()
     state = ServerState()
 
-    # Store metadata
-    db.set_meta("model_name", config.embedding_model)
-    db.set_meta("schema_version", "1")
-
     async def background_init():
-        """Run initialization in background."""
-        nonlocal watcher
-
+        """Run ALL initialization in background - no blocking before server starts."""
         try:
             state.status = "initializing"
             start_time = time.time()
 
-            # Load embedding model (run in thread to avoid blocking event loop)
-            logger.info("Loading embedding model...")
-            await asyncio.to_thread(lambda: embedder.model)
-
-            # Index codebase (run in thread to avoid blocking event loop)
-            logger.info(f"Indexing codebase at {root_dir}...")
-            stats = await asyncio.to_thread(
-                indexer.index_directory, root_dir, None, config.index_batch_size
+            # Create database (this loads sqlite-vec extension, creates tables)
+            logger.info("Initializing database...")
+            components.db = await asyncio.to_thread(
+                Database, db_path, config.embedding_dim
             )
 
-            # Start file watcher
+            # Store metadata
+            await asyncio.to_thread(components.db.set_meta, "model_name", config.embedding_model)
+            await asyncio.to_thread(components.db.set_meta, "schema_version", "1")
+
+            # Create embedder (model loads lazily on first use)
+            components.embedder = Embedder(
+                model_name=config.embedding_model,
+                embedding_dim=config.embedding_dim,
+                batch_size=config.embedding_batch_size,
+                threads=config.embedding_threads,
+                use_quantized=config.use_quantized,
+            )
+
+            # Create indexer and searcher
+            components.indexer = FileIndexer(
+                components.db, components.embedder, root_dir,
+                chunk_overlap=config.chunk_overlap_tokens,
+                max_chunk_tokens=config.max_chunk_tokens,
+                max_file_size_kb=config.max_file_size_kb,
+            )
+            components.searcher = HybridSearcher(
+                components.db, components.embedder, rrf_k=config.rrf_k
+            )
+
+            # Check if we need to do initial indexing
+            existing_stats = components.db.get_stats()
+            if existing_stats.get("files", 0) == 0:
+                # No existing index - load model and index codebase
+                logger.info("Loading embedding model...")
+                await asyncio.to_thread(lambda: components.embedder.model)
+
+                logger.info(f"Indexing codebase at {root_dir}...")
+                stats = await asyncio.to_thread(
+                    components.indexer.index_directory, root_dir, None, config.index_batch_size
+                )
+                state.files_indexed = stats["files_indexed"]
+                state.total_chunks = stats["total_chunks"]
+            else:
+                logger.info(
+                    f"Found existing index ({existing_stats['files']} files, "
+                    f"{existing_stats['chunks']} chunks)"
+                )
+                state.files_indexed = existing_stats["files"]
+                state.total_chunks = existing_stats["chunks"]
+
+            # Start file watcher for incremental updates
             logger.info("Starting file watcher...")
-            watcher = FileWatcher(
-                indexer, root_dir,
+            components.watcher = FileWatcher(
+                components.indexer, root_dir,
                 queue_max_size=config.queue_max_size,
                 debounce_ms=config.debounce_ms,
             )
-            asyncio.create_task(watcher.start())
+            asyncio.create_task(components.watcher.start())
 
             elapsed = (time.time() - start_time) * 1000
             state.status = "ready"
-            state.files_indexed = stats["files_indexed"]
-            state.total_chunks = stats["total_chunks"]
             state.model = config.embedding_model
             state.init_time_ms = elapsed
 
-            logger.info(f"Ready in {elapsed:.0f}ms: {stats['files_indexed']} files, {stats['total_chunks']} chunks")
+            logger.info(f"Ready in {elapsed:.0f}ms: {state.files_indexed} files, {state.total_chunks} chunks")
 
         except Exception as e:
             state.status = "error"
@@ -156,11 +182,10 @@ def create_server(
     @asynccontextmanager
     async def lifespan(app):
         """Start server immediately, initialize in background."""
-        nonlocal watcher
-
         logger.info("Starting semantic code search server...")
 
         # Start initialization in background (non-blocking)
+        # Server accepts MCP connections immediately while this runs
         init_task = asyncio.create_task(background_init())
 
         yield  # Server starts accepting connections immediately
@@ -171,8 +196,8 @@ def create_server(
             await init_task
         except asyncio.CancelledError:
             pass
-        if watcher:
-            await watcher.stop()
+        if components.watcher:
+            await components.watcher.stop()
         logger.info("Server stopped.")
 
     mcp = FastMCP(
@@ -207,42 +232,66 @@ def create_server(
 
         Progress will be reported during indexing.
         """
-        nonlocal watcher
         start_time = time.time()
+
+        # Wait for background init to complete first
+        if state.status == "initializing":
+            if ctx:
+                await ctx.info("Waiting for background initialization...")
+            for _ in range(120):  # 60 second timeout
+                if state.status != "initializing":
+                    break
+                await asyncio.sleep(0.5)
+
+        if state.status == "error":
+            return InitializeResult(
+                status=f"error: {state.error}",
+                model=config.embedding_model,
+                files_indexed=0,
+                total_chunks=0,
+            )
+
+        if components.db is None or components.embedder is None or components.indexer is None:
+            return InitializeResult(
+                status="error: components not initialized",
+                model=config.embedding_model,
+                files_indexed=0,
+                total_chunks=0,
+            )
 
         # Report progress
         if ctx:
             await ctx.report_progress(0, 100, "Loading embedding model...")
 
         # Force model load (run in thread to avoid blocking event loop)
-        await asyncio.to_thread(lambda: embedder.model)
+        await asyncio.to_thread(lambda: components.embedder.model)
 
         if ctx:
             await ctx.report_progress(20, 100, "Scanning codebase...")
 
         if force_reindex:
             # Clear existing data
-            db.conn.execute("DELETE FROM vec_chunks")
-            db.conn.execute("DELETE FROM chunks")
-            db.conn.execute("DELETE FROM files")
-            db.conn.commit()
+            components.db.conn.execute("DELETE FROM vec_chunks")
+            components.db.conn.execute("DELETE FROM chunks")
+            components.db.conn.execute("DELETE FROM files")
+            components.db.conn.commit()
 
         # Index directory (run in thread to avoid blocking event loop)
         stats = await asyncio.to_thread(
-            indexer.index_directory, root_dir, None, config.index_batch_size
+            components.indexer.index_directory, root_dir, None, config.index_batch_size
         )
 
         if ctx:
             await ctx.report_progress(90, 100, "Starting file watcher...")
 
         # Start file watcher if not already running
-        if watcher is None:
-            watcher = FileWatcher(
-                indexer, root_dir,
+        if components.watcher is None:
+            components.watcher = FileWatcher(
+                components.indexer, root_dir,
                 queue_max_size=config.queue_max_size,
                 debounce_ms=config.debounce_ms,
             )
-            asyncio.create_task(watcher.start())
+            asyncio.create_task(components.watcher.start())
 
         if ctx:
             await ctx.report_progress(100, 100, "Ready")
@@ -333,14 +382,23 @@ def create_server(
                 status="initializing",
             )
 
+        if components.embedder is None or components.searcher is None:
+            return SearchResults(
+                query=query,
+                matches=[],
+                total_count=0,
+                search_time_ms=0,
+                status="initializing",
+            )
+
         if ctx:
             await ctx.info(f"Searching: '{query}'")
 
         # Ensure model is loaded
-        if not embedder.is_loaded():
-            _ = embedder.model
+        if not components.embedder.is_loaded():
+            _ = components.embedder.model
 
-        results = searcher.search(
+        results = components.searcher.search(
             query=query,
             max_results=max_results,
             min_score=min_score,
@@ -384,11 +442,19 @@ def create_server(
         Use when a file has been modified but not yet re-indexed,
         or when you want to force a refresh of a file's embeddings.
         """
+        if components.indexer is None:
+            return {
+                "file": file_path,
+                "status": "error",
+                "chunks": 0,
+                "reason": "Server still initializing",
+            }
+
         path = Path(file_path)
         if not path.is_absolute():
             path = root_dir / path
 
-        result = indexer.index_file(path, force=force)
+        result = components.indexer.index_file(path, force=force)
         return {
             "file": str(path),
             "status": result["status"],
@@ -399,7 +465,19 @@ def create_server(
     @mcp.resource("search://status")
     def get_status() -> str:
         """Current index status and statistics."""
-        stats = db.get_stats()
+        if components.db is None:
+            result = {
+                "files": 0,
+                "chunks": 0,
+                "model_name": config.embedding_model,
+                "schema_version": None,
+                "server_status": state.status,
+            }
+            if state.error:
+                result["error"] = state.error
+            return json.dumps(result, indent=2)
+
+        stats = components.db.get_stats()
         result = IndexStats(**stats).model_dump()
         result["server_status"] = state.status
         if state.error:
