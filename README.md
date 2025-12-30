@@ -103,11 +103,43 @@ Environment variables:
 | `SEMANTIC_SEARCH_BATCH_SIZE` | `50` | Files per batch (reduce if running out of memory) |
 | `SEMANTIC_SEARCH_MAX_FILE_SIZE_KB` | `512` | Skip files larger than this (KB) |
 | `SEMANTIC_SEARCH_EMBEDDING_BATCH_SIZE` | `8` | Texts per embedding call (reduce if OOM) |
+| `SEMANTIC_SEARCH_EMBEDDING_THREADS` | `4` | ONNX runtime threads (higher = faster on multi-core) |
+| `SEMANTIC_SEARCH_USE_QUANTIZED` | `true` | Use INT8 quantized model (30-40% faster) |
+
+## Performance
+
+### GPU Acceleration
+
+GPU acceleration is auto-detected and used when available:
+
+| Platform | Provider | Installation |
+|----------|----------|--------------|
+| NVIDIA | CUDA | `pip install semantic-search-mcp[gpu]` |
+| Apple Silicon | CoreML | Automatic (M1/M2/M3) |
+| AMD | ROCm | Install ROCm-enabled onnxruntime |
+| Windows | DirectML | Install DirectML-enabled onnxruntime |
+
+### Alternative Models
+
+For faster indexing (with quality tradeoffs), you can use a lighter model:
+
+| Model | Dimensions | Speed | Best For |
+|-------|------------|-------|----------|
+| `jinaai/jina-embeddings-v2-base-code` | 768 | Baseline | Code search (default) |
+| `BAAI/bge-small-en-v1.5` | 384 | ~10x faster | General text |
+| `sentence-transformers/all-MiniLM-L6-v2` | 384 | ~32x faster | Speed priority |
+
+To use an alternative model:
+```bash
+export SEMANTIC_SEARCH_EMBEDDING_MODEL="sentence-transformers/all-MiniLM-L6-v2"
+```
+
+Note: Changing models requires a full reindex (delete `.semantic-search/` directory).
 
 ## Requirements
 
 - Python 3.11+
-- ~700MB disk for embedding model (downloaded on first run)
+- ~700MB disk for embedding model (downloaded on first run, ~150MB with INT8 quantization)
 - ~1GB RAM for embedding model
 
 ## License
